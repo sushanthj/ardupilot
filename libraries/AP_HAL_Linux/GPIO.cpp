@@ -1,11 +1,10 @@
 #include <AP_HAL/AP_HAL.h>
-#include "GPIO.h"
 
-#if CONFIG_HAL_BOARD == HAL_BOARD_LINUX
+#include "GPIO.h"
 
 using namespace Linux;
 
-static const AP_HAL::HAL& hal = AP_HAL::get_HAL();
+extern const AP_HAL::HAL& hal;
 
 DigitalSource::DigitalSource(uint8_t v) :
     _v(v)
@@ -32,5 +31,3 @@ void DigitalSource::toggle()
 {
     write(!read());
 }
-
-#endif

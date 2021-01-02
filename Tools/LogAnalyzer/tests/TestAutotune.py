@@ -1,5 +1,6 @@
-from LogAnalyzer import Test,TestResult
+from LogAnalyzer import Test, TestResult
 import DataflashLog
+from VehicleType import VehicleType
 
 # from ArduCopter/defines.h
 AUTOTUNE_INITIALISED       = 30
@@ -54,7 +55,7 @@ class TestAutotune(Test):
         self.result = TestResult()
         self.result.status = TestResult.StatusType.GOOD
 
-        if logdata.vehicleType != "ArduCopter":
+        if logdata.vehicleType != VehicleType.Copter:
             self.result.status = TestResult.StatusType.NA
             return
 
@@ -67,7 +68,7 @@ class TestAutotune(Test):
         if r:
             return
 
-        events = filter(lambda x: x[1] in AUTOTUNE_EVENTS, logdata.channels["EV"]["Id"].listData)
+        events = list(filter(lambda x: x[1] in AUTOTUNE_EVENTS, logdata.channels["EV"]["Id"].listData))
         attempts = []
 
         j = None

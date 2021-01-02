@@ -9,11 +9,11 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
- 
+
 // RC AllInOnePRU
-// 
+//
 // 1 channel RCInput with 5ns accuracy
-// 12 channel RCOutput with 1us accuracy 
+// 12 channel RCOutput with 1us accuracy
 
 // Timer
 #define TICK_PER_US 200
@@ -21,8 +21,8 @@
 
 // PWM
 
-// 920 us
-#define PWM_PULSE_DEFAULT (920 * TICK_PER_US)
+// 0 us
+#define PWM_PULSE_DEFAULT (0 * TICK_PER_US)
 
 // 50 Hz
 #define PWM_FREQ_DEFAULT (20 * TICK_PER_MS)
@@ -31,19 +31,18 @@
 #define RCIN_RINGBUFFERSIZE 300
 
 // PRU Constants Table
+// -> 4.4.1.1 Constants Table in TRM
 #define ECAP C3
 #define RAM C24
 #define IEP C26
 
 // IEP
+// -> 4.5.4 PRU_ICSS_IEP Registers in TRM
 #define IEP_TMR_GLB_CFG 0x0
-#define IEP_TMR_GLB_STS 0x4
 #define IEP_TMR_CNT 0xc
 
-#define IEP_CNT_ENABLE 0x0
-#define IEP_DEFAULT_INC 0x4
-
 // ECAP
+// -> 15.3.4.1 ECAP Registers in TRM
 #define ECAP_TSCTR 0x0
 #define ECAP_CTRPHS 0x4
 #define ECAP_CAP1 0x8
@@ -59,6 +58,7 @@
 #define ECAP_REVID 0x5c
 
 // ECCTL1
+// -> 15.3.4.1.7 ECCTL1 Register in TRM
 #define ECAP_CAP1POL 0
 #define ECAP_CTRRST1 1
 #define ECAP_CAP2POL 2
@@ -72,6 +72,7 @@
 #define ECAP_FREE_SOFT 14
 
 // ECCTL2
+// -> 15.3.4.1.8 ECCTL2 Register in TRM
 #define ECAP_CONT_ONESHT 0
 #define ECAP_STOP_WRAP 1
 #define ECAP_RE_ARM 3
@@ -83,6 +84,8 @@
 #define ECAP_APWMPOL 10
 
 // ECEINT, ECFLG
+// -> 15.3.4.1.9 ECEINT Register in TRM
+// -> 15.3.4.1.10 ECFLG Register in TRM
 #define ECAP_INT 0
 #define ECAP_CEVT1 1
 #define ECAP_CEVT2 2
@@ -118,14 +121,16 @@
 #define CH_11_T_TIME_RAM_OFFSET  (22 * 4)
 #define CH_12_PULSE_TIME_RAM_OFFSET (23 * 4)
 #define CH_12_T_TIME_RAM_OFFSET  (24 * 4)
+#define TIME_OFFSET (25 * 4)
+#define MAX_CYCLE_TIME_OFFSET (26 * 4)
 
-#define MAX_CYCLE_TIME_OFFSET (25 * 4)
 
 #define RCIN_RING_HEAD_OFFSET 0x1000
 #define RCIN_RING_TAIL_OFFSET 0x1002
 #define RCIN_RINGBUFFER_RAM_OFFSET 0x1004
 
 // RCOut pins
+#ifdef BBBMINI
 #define RC_CH_1_PIN r30.t10
 #define RC_CH_2_PIN r30.t8
 #define RC_CH_3_PIN r30.t11
@@ -138,6 +143,27 @@
 #define RC_CH_10_PIN r30.t2
 #define RC_CH_11_PIN r30.t1
 #define RC_CH_12_PIN r30.t0
+#endif
+
+#ifdef BBBLUE
+#define RC_CH_1_PIN r30.t8
+#define RC_CH_2_PIN r30.t10
+#define RC_CH_3_PIN r30.t9
+#define RC_CH_4_PIN r30.t11
+#define RC_CH_5_PIN r30.t6
+#define RC_CH_6_PIN r30.t7
+#define RC_CH_7_PIN r30.t4
+#define RC_CH_8_PIN r30.t5
+#endif
+
+#ifdef POCKET
+#define RC_CH_1_PIN r30.t7
+#define RC_CH_2_PIN r30.t4
+#define RC_CH_3_PIN r30.t1
+#define RC_CH_4_PIN r30.t5
+#define RC_CH_5_PIN r30.t2
+#define RC_CH_6_PIN r30.t6
+#endif
 
 // RCOut enable bits
 #define RC_CH_1_ENABLE register.ch_enable.t0
@@ -169,7 +195,7 @@
    .u32 ch_11_next_time
    .u32 ch_12_next_time
    .u32 time
-   .u32 time_max 
+   .u32 time_max
    .u32 time_cycle
    .u32 rcin_ram_pointer
    .u32 rcin_ram_pointer_index
@@ -201,9 +227,12 @@ pwm:
          // Calculate time to next event
          add CH_X_NEXT_TIME, CH_X_NEXT_TIME, register.temp
 
-         // Check if channel is enabled 
+         // Do not set pin if pulse time is 0
+         qbeq pwmend, register.temp, 0
+
+         // Check if channel is enabled
          qbbc pwmend, CH_X_ENABLE
-            
+
             // Set pin
             set RC_CH_X_PIN
          jmp pwmend
@@ -218,7 +247,7 @@ pwm:
          // Calculate time to next event (T - pulse duration)
          sub register.temp, register.temp, register.temp1
          add CH_X_NEXT_TIME, CH_X_NEXT_TIME, register.temp
-         
+
          // Clear pin
          clr RC_CH_X_PIN
 pwmend:
@@ -226,8 +255,21 @@ pwmend:
 
 .macro RCIN_ECAP_INIT
    // Initialize ECAP
+   // -> 15.3.4.1.7 ECCTL1 Register in TRM
+   // ECAP_CTRRST1 = 1 : Reset counter after Event 1 time-stamp has been captured (used in difference mode operation)
+   // ECAP_CAP1POL = 1 : Capture Event 1 triggered on a falling edge (FE)
+   // ECAP_CAP2POL = 0 : Capture Event 2 triggered on a rising edge (RE) - default
+   // ECAP_CTRRST2 = 1 : Reset counter after Event 2 time-stamp has been captured (used in difference mode operation)
+   // ECAP_CAPLDEN = 1 : Enable CAP1-4 register loads at capture event time
    mov register.temp, (1 << ECAP_CTRRST1) | (1 << ECAP_CAP1POL) | (1 << ECAP_CTRRST2) | (1 << ECAP_CAPLDEN)
    sbco register.temp, ECAP, ECAP_ECCTL1, 4
+
+   // -> 15.3.4.1.8 ECCTL2 Register in TRM
+   // ECAP_CONT_ONESHT = 0 : Operate in continuous mode - default
+   // ECAP_STOP_WRAP = 1 : Wrap after Capture Event 2 in continuous mode
+   // ECAP_TSCTRSTOP = 1 : TSCTR free-running
+   // ECAP_SYNCO_SEL = 2 : Disable sync out signal
+   // ECAP_CAP_APWM = 0 : ECAP module operates in capture mode - default
    mov register.temp, (1 << ECAP_STOP_WRAP) | (1 << ECAP_TSCTRSTOP) | (2 << ECAP_SYNCO_SEL)
    sbco register.temp, ECAP, ECAP_ECCTL2, 4
 .endm
@@ -256,7 +298,7 @@ pwmend:
 
       // Check end of ringbuffer
       qblt rcin_ecap_end, register.rcin_ram_pointer_index_max, register.rcin_ram_pointer_index
-         mov register.rcin_ram_pointer, RCIN_RINGBUFFER_RAM_OFFSET 
+         mov register.rcin_ram_pointer, RCIN_RINGBUFFER_RAM_OFFSET
          mov register.rcin_ram_pointer_index, 0
 rcin_ecap_end:
 .endm
@@ -292,7 +334,7 @@ rcin_ecap_end:
 
    // Initialize ringbuffer
    mov register.rcin_ram_pointer, RCIN_RINGBUFFER_RAM_OFFSET
-   mov register.rcin_ram_pointer_index_max, RCIN_RINGBUFFERSIZE 
+   mov register.rcin_ram_pointer_index_max, RCIN_RINGBUFFERSIZE
    mov register.rcin_ram_pointer_head, RCIN_RING_HEAD_OFFSET
    mov register.rcin_ram_pointer_tail, RCIN_RING_TAIL_OFFSET
    mov register.temp, 0
@@ -317,9 +359,9 @@ rcin_ecap_end:
    mov register.ch_enable, 0x0
    sbco register.ch_enable, RAM, CH_ENABLE_RAM_OFFSET, 4
 
-   // Initialize PWM pulse (920us)
+   // Initialize PWM pulse (0us)
    mov register.temp, PWM_PULSE_DEFAULT
-   sbco register.temp, RAM, CH_1_PULSE_TIME_RAM_OFFSET, 4 
+   sbco register.temp, RAM, CH_1_PULSE_TIME_RAM_OFFSET, 4
    sbco register.temp, RAM, CH_2_PULSE_TIME_RAM_OFFSET, 4
    sbco register.temp, RAM, CH_3_PULSE_TIME_RAM_OFFSET, 4
    sbco register.temp, RAM, CH_4_PULSE_TIME_RAM_OFFSET, 4
@@ -334,7 +376,7 @@ rcin_ecap_end:
 
    // Initialize PWM frequency (50Hz)
    mov register.temp, PWM_FREQ_DEFAULT
-   sbco register.temp, RAM, CH_1_T_TIME_RAM_OFFSET, 4 
+   sbco register.temp, RAM, CH_1_T_TIME_RAM_OFFSET, 4
    sbco register.temp, RAM, CH_2_T_TIME_RAM_OFFSET, 4
    sbco register.temp, RAM, CH_3_T_TIME_RAM_OFFSET, 4
    sbco register.temp, RAM, CH_4_T_TIME_RAM_OFFSET, 4
@@ -347,18 +389,33 @@ rcin_ecap_end:
    sbco register.temp, RAM, CH_11_T_TIME_RAM_OFFSET, 4
    sbco register.temp, RAM, CH_12_T_TIME_RAM_OFFSET, 4
 
-   // Initialize counter (1 step = 5ns) 
-   mov register.temp, 1 << IEP_DEFAULT_INC
+   // Initializes the TIME_OFFSET and MAX_CYCLE_TIME_OFFSET
+   mov register.temp, 0
+   sbco register.temp, RAM, TIME_OFFSET, 4
+   sbco register.temp, RAM, MAX_CYCLE_TIME_OFFSET, 4
+
+   // Disables the counter of IEP timer
+   // -> 4.5.4.1 IEP_TMR_GLB_CFG Register in TRM
+   // CNT_ENABLE = 0
+   lbco register.temp, IEP, IEP_TMR_GLB_CFG, 4
+   clr register.temp.t0
    sbco register.temp, IEP, IEP_TMR_GLB_CFG, 4
 
-   // Reset counter
+   // Resets the counter of IEP timer
+   // Reset Count Register (CNT) by writing 0xFFFFFFFF to clear
+   // -> 4.4.3.2.2 Basic Programming Model in TRM
+   // -> 4.5.4.4 IEP_TMR_CNT Register in TRM
    mov register.temp, 0xffffffff
    sbco register.temp, IEP, IEP_TMR_CNT, 4
 
-   // Start counter 
-   lbco register.temp, IEP, IEP_TMR_GLB_CFG, 4
-   or register.temp, register.temp, 1 << IEP_CNT_ENABLE
-   sbco register.temp, IEP, IEP_TMR_GLB_CFG, 4
+   // Configures the IEP counter and enables it
+   // -> 4.5.4.1 IEP_TMR_GLB_CFG Register in TRM
+   // -> Reference: https://github.com/beagleboard/am335x_pru_package/blob/master/pru_sw/example_apps/PRU_industrialEthernetTimer/PRU_industrialEthernetTimer.p
+	// CMP_INC     = 1
+	// DEFAULT_INC = 1
+	// CNT_ENABLE  = 1
+	mov  register.temp, 0x0111
+	sbco register.temp, IEP, IEP_TMR_GLB_CFG, 2
 .endm
 
 .origin 0
@@ -368,18 +425,30 @@ init:
 mainloop:
    lbco register.ch_enable, RAM, CH_ENABLE_RAM_OFFSET, 4
    lbco register.time, IEP, IEP_TMR_CNT, 4
+#ifdef DEBUG
+   //Reports the IEP counter; this used to check that the IEP counter operates normally (for debug)
+   sbco register.time, RAM, TIME_OFFSET, 4
+#endif
    RCOUT_PWM RC_CH_1_PIN, register.ch_1_next_time, RC_CH_1_ENABLE, CH_1_PULSE_TIME_RAM_OFFSET, CH_1_T_TIME_RAM_OFFSET
    RCOUT_PWM RC_CH_2_PIN, register.ch_2_next_time, RC_CH_2_ENABLE, CH_2_PULSE_TIME_RAM_OFFSET, CH_2_T_TIME_RAM_OFFSET
    RCOUT_PWM RC_CH_3_PIN, register.ch_3_next_time, RC_CH_3_ENABLE, CH_3_PULSE_TIME_RAM_OFFSET, CH_3_T_TIME_RAM_OFFSET
    RCOUT_PWM RC_CH_4_PIN, register.ch_4_next_time, RC_CH_4_ENABLE, CH_4_PULSE_TIME_RAM_OFFSET, CH_4_T_TIME_RAM_OFFSET
    RCOUT_PWM RC_CH_5_PIN, register.ch_5_next_time, RC_CH_5_ENABLE, CH_5_PULSE_TIME_RAM_OFFSET, CH_5_T_TIME_RAM_OFFSET
    RCOUT_PWM RC_CH_6_PIN, register.ch_6_next_time, RC_CH_6_ENABLE, CH_6_PULSE_TIME_RAM_OFFSET, CH_6_T_TIME_RAM_OFFSET
+#ifdef BBBLUE
+   RCOUT_PWM RC_CH_7_PIN, register.ch_7_next_time, RC_CH_7_ENABLE, CH_7_PULSE_TIME_RAM_OFFSET, CH_7_T_TIME_RAM_OFFSET
+   RCOUT_PWM RC_CH_8_PIN, register.ch_8_next_time, RC_CH_8_ENABLE, CH_8_PULSE_TIME_RAM_OFFSET, CH_8_T_TIME_RAM_OFFSET
+#endif
+#ifdef BBBMINI
    RCOUT_PWM RC_CH_7_PIN, register.ch_7_next_time, RC_CH_7_ENABLE, CH_7_PULSE_TIME_RAM_OFFSET, CH_7_T_TIME_RAM_OFFSET
    RCOUT_PWM RC_CH_8_PIN, register.ch_8_next_time, RC_CH_8_ENABLE, CH_8_PULSE_TIME_RAM_OFFSET, CH_8_T_TIME_RAM_OFFSET
    RCOUT_PWM RC_CH_9_PIN, register.ch_9_next_time, RC_CH_9_ENABLE, CH_9_PULSE_TIME_RAM_OFFSET, CH_9_T_TIME_RAM_OFFSET
    RCOUT_PWM RC_CH_10_PIN, register.ch_10_next_time, RC_CH_10_ENABLE, CH_10_PULSE_TIME_RAM_OFFSET, CH_10_T_TIME_RAM_OFFSET
    RCOUT_PWM RC_CH_11_PIN, register.ch_11_next_time, RC_CH_11_ENABLE, CH_11_PULSE_TIME_RAM_OFFSET, CH_11_T_TIME_RAM_OFFSET
    RCOUT_PWM RC_CH_12_PIN, register.ch_12_next_time, RC_CH_12_ENABLE, CH_12_PULSE_TIME_RAM_OFFSET, CH_12_T_TIME_RAM_OFFSET
+#endif
    RCIN_ECAP
-//   MAX_CYCLE_TIME
+#ifdef DEBUG
+   MAX_CYCLE_TIME
+#endif
 jmp mainloop

@@ -1,4 +1,3 @@
-/// -*- tab-width: 4; Mode: C++; c-basic-offset: 4; indent-tabs-mode: nil -*-
 /*
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -103,7 +102,12 @@ private:
         uint8_t seq;
     } mavlink;
 
+    uint32_t param_send_last_ms;
+    uint8_t param_send_idx;
+
     void send_report(void);
+    void param_send(const struct gimbal_param *p);
+    struct gimbal_param *param_find(const char *name);
 };
 
 }  // namespace SITL

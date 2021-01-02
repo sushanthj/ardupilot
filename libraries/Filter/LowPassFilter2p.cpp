@@ -35,16 +35,20 @@ template <class T>
 void DigitalBiquadFilter<T>::compute_params(float sample_freq, float cutoff_freq, biquad_params &ret) {
     ret.cutoff_freq = cutoff_freq;
     ret.sample_freq = sample_freq;
+    if (!is_positive(ret.cutoff_freq)) {
+        // zero cutoff means pass-thru
+        return;
+    }
 
     float fr = sample_freq/cutoff_freq;
-    float ohm = tanf(PI/fr);
-    float c = 1.0f+2.0f*cosf(PI/4.0f)*ohm + ohm*ohm;
+    float ohm = tanf(M_PI/fr);
+    float c = 1.0f+2.0f*cosf(M_PI/4.0f)*ohm + ohm*ohm;
 
     ret.b0 = ohm*ohm/c;
     ret.b1 = 2.0f*ret.b0;
     ret.b2 = ret.b0;
     ret.a1 = 2.0f*(ohm*ohm-1.0f)/c;
-    ret.a2 = (1.0f-2.0f*cosf(PI/4.0f)*ohm+ohm*ohm)/c;
+    ret.a2 = (1.0f-2.0f*cosf(M_PI/4.0f)*ohm+ohm*ohm)/c;
 }
 
 
@@ -83,6 +87,10 @@ float LowPassFilter2p<T>::get_sample_freq(void) const {
 
 template <class T>
 T LowPassFilter2p<T>::apply(const T &sample) {
+    if (!is_positive(_params.cutoff_freq)) {
+        // zero cutoff means pass-thru
+        return sample;
+    }
     return _filter.apply(sample, _params);
 }
 

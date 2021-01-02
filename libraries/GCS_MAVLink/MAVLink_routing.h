@@ -1,10 +1,6 @@
-// -*- tab-width: 4; Mode: C++; c-basic-offset: 4; indent-tabs-mode: nil -*-
-
 /// @file	MAVLink_routing.h
 /// @brief	handle routing of MAVLink packets by ID
-
-#ifndef __MAVLINK_ROUTING_H
-#define __MAVLINK_ROUTING_H
+#pragma once
 
 #include <AP_HAL/AP_HAL.h>
 #include <AP_Common/AP_Common.h>
@@ -19,6 +15,8 @@
  */
 class MAVLink_routing
 {
+    friend class GCS_MAVLINK;
+    
 public:
     MAVLink_routing(void);
 
@@ -29,13 +27,16 @@ public:
 
       This returns true if the message should be processed locally
     */
-    bool check_and_forward(mavlink_channel_t in_channel, const mavlink_message_t* msg);
+    bool check_and_forward(mavlink_channel_t in_channel, const mavlink_message_t &msg);
 
     /*
       send a MAVLink message to all components with this vehicle's system id
       This is a no-op if no routes to components have been learned
+
+      msgid here is the mavlink message ID, pkt is a pointer to a
+      mavlink message structure (e.g. a mavlink_command_long_t)
     */
-    void send_to_components(const mavlink_message_t* msg);
+    void send_to_components(uint32_t msgid, const char *pkt, uint8_t pkt_len);
 
     /*
       search for the first vehicle or component in the routing table with given mav_type and retrieve it's sysid, compid and channel
@@ -53,16 +54,18 @@ private:
         mavlink_channel_t channel;
         uint8_t mavtype;
     } routes[MAVLINK_MAX_ROUTES];
-
+    
+    // a channel mask to block routing as required
+    uint8_t no_route_mask;
+    
     // learn new routes
-    void learn_route(mavlink_channel_t in_channel, const mavlink_message_t* msg);
+    void learn_route(mavlink_channel_t in_channel, const mavlink_message_t &msg);
 
     // extract target sysid and compid from a message
-    void get_targets(const mavlink_message_t* msg, int16_t &sysid, int16_t &compid);
+    void get_targets(const mavlink_message_t &msg, int16_t &sysid, int16_t &compid);
 
     // special handling for heartbeat messages
-    void handle_heartbeat(mavlink_channel_t in_channel, const mavlink_message_t* msg);
+    void handle_heartbeat(mavlink_channel_t in_channel, const mavlink_message_t &msg);
+
+    void send_to_components(const char *pkt, const mavlink_msg_entry_t *entry, uint8_t pkt_len);
 };
-
-#endif // __MAVLINK_ROUTING_H
-

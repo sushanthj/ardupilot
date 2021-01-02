@@ -1,4 +1,3 @@
-// -*- tab-width: 4; Mode: C++; c-basic-offset: 4; indent-tabs-mode: nil -*-
 /*
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -18,9 +17,7 @@
 /// @file	ModeFilter.h
 /// @brief	A class to apply a mode filter which is basically picking the median value from the last x samples
 ///         the filter size (i.e buffer size) should always be an odd number
-
-#ifndef __MODE_FILTER_H__
-#define __MODE_FILTER_H__
+#pragma once
 
 #include <inttypes.h>
 #include "FilterClass.h"
@@ -33,7 +30,7 @@ public:
     ModeFilter(uint8_t return_element);
 
     // apply - Add a new raw value to the filter, retrieve the filtered result
-    virtual T        apply(T sample);
+    virtual T        apply(T sample) override;
 
     // get - get latest filtered value from filter (equal to the value returned by latest call to apply method)
     virtual T        get() const {
@@ -154,5 +151,3 @@ void ModeFilter<T,FILTER_SIZE>::        isort(T new_sample, bool drop_high)
         FilterWithBuffer<T,FILTER_SIZE>::samples[i] = new_sample;
     }
 }
-
-#endif // __MODE_FILTER_H__

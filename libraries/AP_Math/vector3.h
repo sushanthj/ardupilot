@@ -1,4 +1,3 @@
-// -*- tab-width: 4; Mode: C++; c-basic-offset: 4; indent-tabs-mode: nil -*-
 /*
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -26,7 +25,7 @@
 *          18-12-2003
 *          06-06-2004
 *
-* © 2003, This code is provided "as is" and you can use it freely as long as
+* Copyright 2003, This code is provided "as is" and you can use it freely as long as
 * credit is given to Bill Perone in the application it is used in
 *
 * Notes:
@@ -42,22 +41,24 @@
 * scalar triple product: a*(b%c) = c*(a%b) = b*(c%a)
 * vector quadruple product: (a%b)*(c%d) = (a*c)*(b*d) - (a*d)*(b*c)
 * if a is unit vector along b then a%b = -b%a = -b(cast to matrix)*a = 0
-* vectors a1...an are linearly dependant if there exists a vector of scalars (b) where a1*b1 + ... + an*bn = 0
+* vectors a1...an are linearly dependent if there exists a vector of scalars (b) where a1*b1 + ... + an*bn = 0
 *           or if the matrix (A) * b = 0
 *
 ****************************************/
+#pragma once
 
-#ifndef VECTOR3_H
-#define VECTOR3_H
+#ifndef MATH_CHECK_INDEXES
+#define MATH_CHECK_INDEXES 0
+#endif
 
-#include <math.h>
+#include <cmath>
 #include <float.h>
 #include <string.h>
-
-
-#if defined(MATH_CHECK_INDEXES) && (MATH_CHECK_INDEXES == 1)
+#if MATH_CHECK_INDEXES
 #include <assert.h>
 #endif
+
+#include "rotations.h"
 
 template <typename T>
 class Matrix3;
@@ -70,19 +71,16 @@ public:
     T        x, y, z;
 
     // trivial ctor
-    Vector3<T>() {
-        x = y = z = 0;
-    }
+    constexpr Vector3<T>()
+        : x(0)
+        , y(0)
+        , z(0) {}
 
     // setting ctor
-    Vector3<T>(const T x0, const T y0, const T z0) : x(x0), y(y0), z(z0) {
-    }
-
-    // function call operator
-    void operator ()(const T x0, const T y0, const T z0)
-    {
-        x= x0; y= y0; z= z0;
-    }
+    constexpr Vector3<T>(const T x0, const T y0, const T z0)
+        : x(x0)
+        , y(y0)
+        , z(z0) {}
 
     // test for equality
     bool operator ==(const Vector3<T> &v) const;
@@ -117,10 +115,16 @@ public:
     // uniform scaling
     Vector3<T> &operator /=(const T num);
 
+    // non-uniform scaling
+    Vector3<T> &operator *=(const Vector3<T> &v) {
+        x *= v.x; y *= v.y; z *= v.z;
+        return *this;
+    }
+
     // allow a vector3 to be used as an array, 0 indexed
     T & operator[](uint8_t i) {
         T *_v = &x;
-#if defined(MATH_CHECK_INDEXES) && (MATH_CHECK_INDEXES == 1)
+#if MATH_CHECK_INDEXES
         assert(i >= 0 && i < 3);
 #endif
         return _v[i];
@@ -128,7 +132,7 @@ public:
 
     const T & operator[](uint8_t i) const {
         const T *_v = &x;
-#if defined(MATH_CHECK_INDEXES) && (MATH_CHECK_INDEXES == 1)
+#if MATH_CHECK_INDEXES
         assert(i >= 0 && i < 3);
 #endif
         return _v[i];
@@ -137,6 +141,11 @@ public:
     // dot product
     T operator *(const Vector3<T> &v) const;
 
+    // dot product for Lua
+    T dot(const Vector3<T> &v) const {
+        return *this * v;
+    }
+    
     // multiply a row vector by a matrix, to give a row vector
     Vector3<T> operator *(const Matrix3<T> &m) const;
 
@@ -146,21 +155,36 @@ public:
     // cross product
     Vector3<T> operator %(const Vector3<T> &v) const;
 
+    // cross product for Lua
+    Vector3<T> cross(const Vector3<T> &v) const {
+        return *this % v;
+    }
+
+    // scale a vector3
+    Vector3<T> scale(const float v) const {
+        return *this * v;
+    }
+    
     // computes the angle between this vector and another vector
     float angle(const Vector3<T> &v2) const;
 
     // check if any elements are NAN
-    bool is_nan(void) const;
+    bool is_nan(void) const WARN_IF_UNUSED;
 
     // check if any elements are infinity
-    bool is_inf(void) const;
+    bool is_inf(void) const WARN_IF_UNUSED;
 
     // check if all elements are zero
-    bool is_zero(void) const { return (fabsf(x) < FLT_EPSILON) && (fabsf(y) < FLT_EPSILON) && (fabsf(z) < FLT_EPSILON); }
+    bool is_zero(void) const WARN_IF_UNUSED {
+        return (fabsf(x) < FLT_EPSILON) &&
+               (fabsf(y) < FLT_EPSILON) &&
+               (fabsf(z) < FLT_EPSILON);
+    }
 
 
     // rotate by a standard rotation
     void rotate(enum Rotation rotation);
+    void rotate_inverse(enum Rotation rotation);
 
     // gets the length of this vector squared
     T  length_squared() const
@@ -209,7 +233,35 @@ public:
         return v * (*this * v)/(v*v);
     }
 
+    // distance from the tip of this vector to another vector squared (so as to avoid the sqrt calculation)
+    float distance_squared(const Vector3<T> &v) const {
+        const float dist_x = x-v.x;
+        const float dist_y = y-v.y;
+        const float dist_z = z-v.z;
+        return (dist_x*dist_x + dist_y*dist_y + dist_z*dist_z);
+    }
 
+    // distance from the tip of this vector to a line segment specified by two vectors
+    float distance_to_segment(const Vector3<T> &seg_start, const Vector3<T> &seg_end) const;
+
+    // given a position p1 and a velocity v1 produce a vector
+    // perpendicular to v1 maximising distance from p1.  If p1 is the
+    // zero vector the return from the function will always be the
+    // zero vector - that should be checked for.
+    static Vector3<T> perpendicular(const Vector3<T> &p1, const Vector3<T> &v1)
+    {
+        const T d = p1 * v1;
+        if (fabsf(d) < FLT_EPSILON) {
+            return p1;
+        }
+        const Vector3<T> parallel = (v1 * d) / v1.length_squared();
+        Vector3<T> perpendicular = p1 - parallel;
+
+        return perpendicular;
+    }
+
+    // Shortest distance between point(p) to a point contained in the line segment defined by w1,w2
+    static float closest_distance_between_line_and_point(const Vector3<T> &w1, const Vector3<T> &w2, const Vector3<T> &p);
 };
 
 typedef Vector3<int16_t>                Vector3i;
@@ -218,5 +270,3 @@ typedef Vector3<int32_t>                Vector3l;
 typedef Vector3<uint32_t>               Vector3ul;
 typedef Vector3<float>                  Vector3f;
 typedef Vector3<double>                 Vector3d;
-
-#endif // VECTOR3_H

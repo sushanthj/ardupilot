@@ -1,4 +1,3 @@
-// -*- tab-width: 4; Mode: C++; c-basic-offset: 4; indent-tabs-mode: nil -*-
 /*
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -20,9 +19,11 @@
 #include <AP_HAL/AP_HAL.h>
 #include <AP_Common/AP_Common.h>
 #include <AP_Math/AP_Math.h>
+#include <AP_Rally/AP_Rally.h>
 #include <GCS_MAVLink/GCS_MAVLink.h>
 #include <GCS_MAVLink/GCS.h>
 #include "AP_Terrain.h"
+#include <AP_GPS/AP_GPS.h>
 
 #if AP_TERRAIN_AVAILABLE
 
@@ -48,7 +49,7 @@ void AP_Terrain::update_mission_data(void)
 
     uint16_t pending, loaded;
     get_statistics(pending, loaded);
-    if (pending && ahrs.get_gps().status() >= AP_GPS::GPS_OK_FIX_3D) {
+    if (pending && AP::gps().status() >= AP_GPS::GPS_OK_FIX_3D) {
         // wait till we have fully filled the current set of grids
         return;
     }
@@ -82,12 +83,12 @@ void AP_Terrain::update_mission_data(void)
         // spacings away at 45, 135, 225 and 315 degrees, and the
         // point itself
         if (next_mission_pos != 4) {
-            location_update(cmd.content.location, 45+90*next_mission_pos, grid_spacing.get() * 10);
+            cmd.content.location.offset_bearing(45+90*next_mission_pos, grid_spacing.get() * 10);
         }
 
         // we have a mission command to check
         float height;
-        if (!height_amsl(cmd.content.location, height)) {
+        if (!height_amsl(cmd.content.location, height, false)) {
             // if we can't get data for a mission item then return and
             // check again next time
             return;
@@ -111,11 +112,16 @@ void AP_Terrain::update_mission_data(void)
  */
 void AP_Terrain::update_rally_data(void)
 {
-    if (last_rally_change_ms != rally.last_change_time_ms() ||
+    const AP_Rally *rally = AP::rally();
+    if (rally == nullptr) {
+        return;
+    }
+
+    if (last_rally_change_ms != rally->last_change_time_ms() ||
         last_rally_spacing != grid_spacing) {
         // a rally point has changed - start again
         next_rally_index = 1;
-        last_rally_change_ms = rally.last_change_time_ms();
+        last_rally_change_ms = rally->last_change_time_ms();
         last_rally_spacing = grid_spacing;
     }
     if (next_rally_index == 0) {
@@ -125,7 +131,7 @@ void AP_Terrain::update_rally_data(void)
 
     uint16_t pending, loaded;
     get_statistics(pending, loaded);
-    if (pending && ahrs.get_gps().status() >= AP_GPS::GPS_OK_FIX_3D) {
+    if (pending && AP::gps().status() >= AP_GPS::GPS_OK_FIX_3D) {
         // wait till we have fully filled the current set of grids
         return;
     }
@@ -133,7 +139,7 @@ void AP_Terrain::update_rally_data(void)
     while (true) {
         // get next rally point
         struct RallyLocation rp;
-        if (!rally.get_rally_point_with_index(next_rally_index, rp)) {
+        if (!rally->get_rally_point_with_index(next_rally_index, rp)) {
             // nothing more to do
             next_rally_index = 0;
             return;
@@ -143,7 +149,7 @@ void AP_Terrain::update_rally_data(void)
         loc.lat = rp.lat;
         loc.lng = rp.lng;
         float height;
-        if (!height_amsl(loc, height)) {
+        if (!height_amsl(loc, height, false)) {
             // if we can't get data for a rally item then return and
             // check again next time
             return;

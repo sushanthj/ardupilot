@@ -106,7 +106,7 @@ mounting, servos and other hardware in your tracker. Unless you do this IT
 WILL PROBABLY NOT WORK AS EXPECTED. CAUTION: It might even oscillate or flap
 around. It might even damage itself.
 
-AntennaTracker (like other ardupilot software such as ArduPlane, APMRover2
+AntennaTracker (like other ardupilot software such as ArduPlane, ArduRover
 etc) has configuration values that control and tailor its operation, and which
 are stored in EEPROM on the processor. The configuration is restored from
 EEPROM every time the processsor starts.
@@ -162,7 +162,7 @@ Use Mission Planner to calibrate the tracker:
 - click on OK
 - rotate the complete antenna tracker assembly around, in 3 dimensions, making sure to
 rotate the tracker to every possible orientation in the 1 minute you have
-available. DONT just move the yaw and pitch motors around. You will probably have to
+available. DON'T just move the yaw and pitch motors around. You will probably have to
 pick the whole thing up.
 - At the end of the minute, Mission Planner will update AntennaTrackers compass offsets.
 

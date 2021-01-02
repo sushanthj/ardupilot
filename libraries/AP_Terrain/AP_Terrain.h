@@ -1,4 +1,3 @@
-// -*- tab-width: 4; Mode: C++; c-basic-offset: 4; indent-tabs-mode: nil -*-
 /*
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -13,15 +12,14 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-
-#ifndef __AP_TERRAIN_H__
-#define __AP_TERRAIN_H__
+#pragma once
 
 #include <AP_Common/AP_Common.h>
 #include <AP_HAL/AP_HAL.h>
-#include <DataFlash/DataFlash.h>
+#include <AP_Common/Location.h>
+#include <AP_Filesystem/AP_Filesystem_Available.h>
 
-#if HAL_OS_POSIX_IO && defined(HAL_BOARD_TERRAIN_DIRECTORY)
+#if HAVE_FILESYSTEM_SUPPORT && defined(HAL_BOARD_TERRAIN_DIRECTORY)
 #define AP_TERRAIN_AVAILABLE 1
 #else
 #define AP_TERRAIN_AVAILABLE 0
@@ -30,9 +28,7 @@
 #if AP_TERRAIN_AVAILABLE
 
 #include <AP_Param/AP_Param.h>
-#include <AP_AHRS/AP_AHRS.h>
 #include <AP_Mission/AP_Mission.h>
-#include <AP_Rally/AP_Rally.h>
 
 #define TERRAIN_DEBUG 0
 
@@ -61,7 +57,13 @@
 // format of grid on disk
 #define TERRAIN_GRID_FORMAT_VERSION 1
 
+// we allow for a 2cm discrepancy in the grid corners. This is to
+// account for different rounding in terrain DAT file generators using
+// different programming languages
+#define TERRAIN_LATLON_EQUAL(v1, v2) (labs((v1)-(v2)) <= 2)
+
 #if TERRAIN_DEBUG
+#include <assert.h>
 #define ASSERT_RANGE(v,minv,maxv) assert((v)<=(maxv)&&(v)>=(minv))
 #else
 #define ASSERT_RANGE(v,minv,maxv)
@@ -77,10 +79,15 @@
   file:        first entries increase east, then north
  */
 
-class AP_Terrain
-{
+class AP_Terrain {
 public:
-    AP_Terrain(AP_AHRS &_ahrs, const AP_Mission &_mission, const AP_Rally &_rally);
+    AP_Terrain(const AP_Mission &_mission);
+
+    /* Do not allow copies */
+    AP_Terrain(const AP_Terrain &other) = delete;
+    AP_Terrain &operator=(const AP_Terrain&) = delete;
+
+    static AP_Terrain *get_singleton(void) { return singleton; }
 
     enum TerrainStatus {
         TerrainStatusDisabled  = 0, // not enabled
@@ -89,25 +96,35 @@ public:
     };
 
     static const struct AP_Param::GroupInfo var_info[];
-    
+
     // update terrain state. Should be called at 1Hz or more
     void update(void);
+
+    bool enabled() const { return enable; }
 
     // return status enum for health reporting
     enum TerrainStatus status(void) const { return system_status; }
 
     // send any pending terrain request message
+    bool send_cache_request(mavlink_channel_t chan);
     void send_request(mavlink_channel_t chan);
 
     // handle terrain data and reports from GCS
     void send_terrain_report(mavlink_channel_t chan, const Location &loc, bool extrapolate);
-    void handle_data(mavlink_channel_t chan, mavlink_message_t *msg);
-    void handle_terrain_check(mavlink_channel_t chan, mavlink_message_t *msg);
-    void handle_terrain_data(mavlink_message_t *msg);
+    void handle_data(mavlink_channel_t chan, const mavlink_message_t &msg);
+    void handle_terrain_check(mavlink_channel_t chan, const mavlink_message_t &msg);
+    void handle_terrain_data(const mavlink_message_t &msg);
 
-    // return terrain height in meters above sea level for a location
-    // return false if not available
-    bool height_amsl(const Location &loc, float &height);
+    /*
+      find the terrain height in meters above sea level for a location
+
+      return false if not available
+
+      if corrected is true then terrain alt is adjusted so that
+      the terrain altitude matches the home altitude at the home location
+      (i.e. we assume home is at the terrain altitude)
+     */
+    bool height_amsl(const Location &loc, float &height, bool corrected);
 
     /* 
        find difference between home terrain height and the terrain
@@ -143,11 +160,10 @@ public:
                                          bool extrapolate = false);
 
     /* 
-       return current height above terrain at current AHRS
-       position. 
+       return current height above terrain at current AHRS position.
 
        If extrapolate is true then extrapolate from most recently
-       available terrain data is terrain data is not available for the
+       available terrain data if terrain data is not available for the
        current location.
 
        Return true if height is available, otherwise false.
@@ -161,9 +177,19 @@ public:
     float lookahead(float bearing, float distance, float climb_ratio);
 
     /*
-      log terrain status to DataFlash
+      log terrain status to AP_Logger
      */
-    void log_terrain_data(DataFlash_Class &dataflash);
+    void log_terrain_data();
+
+    /*
+      get some statistics for TERRAIN_REPORT
+     */
+    void get_statistics(uint16_t &pending, uint16_t &loaded) const;
+
+    /*
+      returns true if initialisation failed because out-of-memory
+     */
+    bool init_failed() const { return memory_alloc_failed; }
 
 private:
     // allocate the terrain subsystem data
@@ -294,8 +320,7 @@ private:
     /*
       get some statistics for TERRAIN_REPORT
      */
-    uint8_t bitcount64(uint64_t b);
-    void get_statistics(uint16_t &pending, uint16_t &loaded);
+    uint8_t bitcount64(uint64_t b) const;
 
     /*
       disk IO functions
@@ -307,6 +332,7 @@ private:
     void io_timer(void);
     void open_file(void);
     void seek_offset(void);
+    uint32_t east_blocks(struct grid_block &block) const;
     void write_block(void);
     void read_block(void);
 
@@ -324,18 +350,15 @@ private:
     // parameters
     AP_Int8  enable;
     AP_Int16 grid_spacing; // meters between grid points
+    AP_Int16 options; // option bits
 
-    // reference to AHRS, so we can ask for our position,
-    // heading and speed
-    AP_AHRS &ahrs;
+    enum class Options {
+        DisableDownload = (1U<<0),
+    };
 
     // reference to AP_Mission, so we can ask preload terrain data for 
     // all waypoints
     const AP_Mission &mission;
-
-    // reference to AP_Rally, so we can ask preload terrain data for 
-    // all rally points
-    const AP_Rally &rally;
 
     // cache of grids in memory, LRU
     uint8_t cache_size = 0;
@@ -369,6 +392,7 @@ private:
 
     // do we have an IO failure
     volatile bool io_failure;
+    uint32_t last_retry_ms;
 
     // have we created the terrain directory?
     bool directory_created;
@@ -404,10 +428,20 @@ private:
     // grid spacing during rally check
     uint16_t last_rally_spacing;
 
-    char *file_path = NULL;    
+    char *file_path = nullptr;
 
     // status
     enum TerrainStatus system_status = TerrainStatusDisabled;
+
+    // memory allocation status
+    bool memory_alloc_failed;
+
+    static AP_Terrain *singleton;
 };
+
+namespace AP {
+    AP_Terrain &terrain();
+};
+
 #endif // AP_TERRAIN_AVAILABLE
-#endif // __AP_TERRAIN_H__
+

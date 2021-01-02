@@ -1,9 +1,7 @@
-// -*- tab-width: 4; Mode: C++; c-basic-offset: 4; indent-tabs-mode: nil -*-
+#pragma once
 
-#ifndef PARAMETERS_H
-#define PARAMETERS_H
-
-#include <AP_Common/AP_Common.h>
+#include <AC_PID/AC_PID.h>
+#include <AP_Param/AP_Param.h>
 
 // Global parameter class.
 //
@@ -38,18 +36,11 @@ public:
     //////////////////////////////////////////////////////////////////
 
 
-    // The parameter software_type is set up solely for ground station use
-    // and identifies the software type (eg ArduPilotMega versus ArduCopterMega)
-    // GCS will interpret values 0-9 as ArduPilotMega.  Developers may use
-    // values within that range to identify different branches.
-    //
-    static const uint16_t k_software_type = 4;
-
     enum {
         // Layout version number, always key zero.
         //
         k_param_format_version = 0,
-        k_param_software_type,
+        k_param_software_type,      // deprecated
 
         k_param_gcs0 = 100,         // stream rates for uartA
         k_param_gcs1,               // stream rates for uartC
@@ -58,15 +49,15 @@ public:
         k_param_serial0_baud,       // deprecated
         k_param_serial1_baud,       // deprecated
         k_param_imu,
-        k_param_compass_enabled,
+        k_param_compass_enabled_deprecated,
         k_param_compass,
         k_param_ahrs,  // AHRS group
         k_param_barometer,
         k_param_scheduler,
         k_param_ins,
         k_param_sitl,
-        k_param_pidPitch2Srv,
-        k_param_pidYaw2Srv,
+        k_param_pidPitch_old,   // deprecated
+        k_param_pidYaw_old,     // deprecated
         k_param_gcs2,               // stream rates for uartD
         k_param_serial2_baud,       // deprecated
 
@@ -79,9 +70,9 @@ public:
         k_param_startup_delay,
         k_param_BoardConfig,
         k_param_gps,
-        k_param_scan_speed,
+        k_param_scan_speed_unused, // deprecated
         k_param_proxy_mode_unused, // deprecated
-        k_param_servo_type,
+        k_param_servo_pitch_type,
         k_param_onoff_yaw_rate,
         k_param_onoff_pitch_rate,
         k_param_onoff_yaw_mintime,
@@ -89,21 +80,40 @@ public:
         k_param_yaw_trim,
         k_param_pitch_trim,
         k_param_yaw_range,
-        k_param_pitch_range,
+        k_param_pitch_range,	//deprecated
         k_param_distance_min,
         k_param_sysid_target,       // 138
         k_param_gcs3,               // stream rates for fourth MAVLink port
+        k_param_log_bitmask,        // 140
+        k_param_notify,
+        k_param_can_mgr,
+        k_param_battery,
 
         //
         // 150: Telemetry control
         //
         k_param_serial_manager,     // serial manager library
+        k_param_servo_yaw_type,
+        k_param_alt_source,
+        k_param_mavlink_update_rate,
+        k_param_pitch_min,
+        k_param_pitch_max,
+        k_param_gcs4,               // stream rates for fourth MAVLink port
+        k_param_gcs5,               // stream rates for fourth MAVLink port
+        k_param_gcs6,               // stream rates for fourth MAVLink port
 
         //
         // 200 : Radio settings
         //
-        k_param_channel_yaw = 200,
-        k_param_channel_pitch,
+        k_param_channel_yaw_old = 200,
+        k_param_channel_pitch_old,
+        k_param_pidPitch2Srv,
+        k_param_pidYaw2Srv,
+        k_param_rc_channels,
+        k_param_servo_channels,
+
+        k_param_stats = 218,
+        k_param_scripting = 219,
 
         //
         // 220: Waypoint data
@@ -111,10 +121,20 @@ public:
         k_param_command_total = 220,
 
         // 254,255: reserved
+        k_param_gcs_pid_mask = 225,
+        k_param_scan_speed_yaw,
+        k_param_scan_speed_pitch,
+        k_param_initial_mode,
+        k_param_disarm_pwm,
+
+        k_param_auto_opts,
+
+        k_param_logger = 253, // 253 - Logging Group
+
+        k_param_vehicle = 257, // vehicle common block of parameters
     };
 
     AP_Int16 format_version;
-    AP_Int8 software_type;
 
     // Telemetry control
     //
@@ -122,18 +142,20 @@ public:
     AP_Int16 sysid_my_gcs;
     AP_Int16 sysid_target;
 
-    AP_Int8 compass_enabled;
-
     AP_Float yaw_slew_time;
     AP_Float pitch_slew_time;
     AP_Float min_reverse_time;
-    AP_Float scan_speed;
+    AP_Int16 scan_speed_yaw;
+    AP_Int16 scan_speed_pitch;
 
     AP_Float start_latitude;
     AP_Float start_longitude;
 
     AP_Float startup_delay;
-    AP_Int8  servo_type;
+    AP_Int8  servo_pitch_type;
+    AP_Int8  servo_yaw_type;
+    AP_Int8  alt_source;
+    AP_Int8  mavlink_update_rate;
     AP_Float onoff_yaw_rate;
     AP_Float onoff_pitch_rate;
     AP_Float onoff_yaw_mintime;
@@ -141,23 +163,28 @@ public:
     AP_Float yaw_trim;
     AP_Float pitch_trim;
     AP_Int16 yaw_range;             // yaw axis total range of motion in degrees
-    AP_Int16 pitch_range;           // pitch axis total range of motion in degrees
     AP_Int16 distance_min;          // target's must be at least this distance from tracker to be tracked
+    AP_Int16 pitch_min;
+    AP_Int16 pitch_max;
+    AP_Int16 gcs_pid_mask;
+    AP_Int8  initial_mode;
+    AP_Int8 disarm_pwm;
+    AP_Int8 auto_opts;
 
     // Waypoints
     //
     AP_Int8 command_total; // 1 if HOME is set
 
-    // PID controllers
-    PID         pidPitch2Srv;
-    PID         pidYaw2Srv;
+    AP_Int32 log_bitmask;
+
+    // AC_PID controllers
+    AC_PID         pidPitch2Srv;
+    AC_PID         pidYaw2Srv;
 
     Parameters() :
-        pidPitch2Srv(0.2, 0, 0.05f, 4000.0f),
-        pidYaw2Srv  (0.2, 0, 0.05f, 4000.0f)
+        pidPitch2Srv(0.2, 0.0f, 0.05f, 0.02f, 4000.0f, 0.0f, 0.0f, 0.0f, 0.1f),
+        pidYaw2Srv  (0.2, 0.0f, 0.05f, 0.02f, 4000.0f, 0.0f, 0.0f, 0.0f, 0.1f)
         {}
 };
 
 extern const AP_Param::Info var_info[];
-
-#endif // PARAMETERS_H

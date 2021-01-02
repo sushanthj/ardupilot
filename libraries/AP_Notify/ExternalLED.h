@@ -1,5 +1,3 @@
-/// -*- tab-width: 4; Mode: C++; c-basic-offset: 4; indent-tabs-mode: nil -*-
-
 /*
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -15,25 +13,25 @@
    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef __EXTERNALLED_H__
-#define __EXTERNALLED_H__
+#pragma once
 
 #include <AP_Common/AP_Common.h>
 #include <AP_HAL/AP_HAL.h>
 #include <AP_Param/AP_Param.h>
+
 #include "NotifyDevice.h"
 
 class ExternalLED: public NotifyDevice
 {
 public:
     // constructor
-    ExternalLED() : _counter(0), _counter2(0), _pattern(NONE), _pattern_counter(0) {}
+    ExternalLED() : _pattern(NONE) {}
 
     // initialise the LED driver
-    bool init(void);
-    
+    bool init(void) override;
+
     // should be called at 50Hz
-    void update(void);
+    void update(void) override;
 
 private:
 
@@ -70,5 +68,3 @@ private:
     void motor_led1(bool on_off);
     void motor_led2(bool on_off);
 };
-
-#endif // __EXTERNALLED_H__

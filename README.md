@@ -1,99 +1,141 @@
-#ArduPilot Project#
+# ArduPilot Project
 
-[![Gitter](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/diydrones/ardupilot?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
+[![Gitter](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/ArduPilot/ardupilot?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
 
-### The ArduPilot project is made up of: ###
->>ArduCopter (or APM:Copter) : [code](https://github.com/diydrones/ardupilot/tree/master/ArduCopter), [wiki](http://copter.ardupilot.com)
+![Test Copter](https://github.com/ArduPilot/ardupilot/workflows/test%20copter/badge.svg?branch=master) ![Test Plane](https://github.com/ArduPilot/ardupilot/workflows/test%20plane/badge.svg?branch=master) ![Test Rover](https://github.com/ArduPilot/ardupilot/workflows/test%20rover/badge.svg?branch=master) ![Test Sub](https://github.com/ArduPilot/ardupilot/workflows/test%20sub/badge.svg?branch=master) ![Test Tracker](https://github.com/ArduPilot/ardupilot/workflows/test%20tracker/badge.svg?branch=master)
 
->>ArduPlane (or APM:Plane) : [code](https://github.com/diydrones/ardupilot/tree/master/ArduPlane), [wiki](http://plane.ardupilot.com)
+![Test AP_Periph](https://github.com/ArduPilot/ardupilot/workflows/test%20ap_periph/badge.svg?branch=master) ![Test Chibios](https://github.com/ArduPilot/ardupilot/workflows/test%20chibios/badge.svg?branch=master) ![Test Linux SBC](https://github.com/ArduPilot/ardupilot/workflows/test%20Linux%20SBC/badge.svg?branch=master) ![Test Replay](https://github.com/ArduPilot/ardupilot/workflows/test%20replay/badge.svg?branch=master)
 
->>ArduRover (or APMrover2) : [code](https://github.com/diydrones/ardupilot/tree/master/APMrover2), [wiki](http://rover.ardupilot.com)
+![Test Unit Tests](https://github.com/ArduPilot/ardupilot/workflows/test%20unit%20tests/badge.svg?branch=master)
 
->>Antenna Tracker : [code](https://github.com/diydrones/ardupilot/tree/master/AntennaTracker), [wiki](http://copter.ardupilot.com/wiki/common-antennatracker-introduction)
+[![Build SemaphoreCI](https://semaphoreci.com/api/v1/ardupilot/ardupilot/branches/master/badge.svg)](https://semaphoreci.com/ardupilot/ardupilot) [![Build Status](https://dev.azure.com/ardupilot-org/ardupilot/_apis/build/status/ArduPilot.ardupilot?branchName=master)](https://dev.azure.com/ardupilot-org/ardupilot/_build/latest?definitionId=1&branchName=master)
 
-### User Support & Discussion Forums ###
->>APM Forum: [http://ardupilot.com/forum/index.php](http://ardupilot.com/forum/index.php)
+[![Coverity Scan Build Status](https://scan.coverity.com/projects/5331/badge.svg)](https://scan.coverity.com/projects/ardupilot-ardupilot)
 
->>Community Site: [http://diydrones.com](http://diydrones.com)
+[![Autotest Status](https://autotest.ardupilot.org/autotest-badge.svg)](https://autotest.ardupilot.org/)
 
-### Developer Information ###
->>Github repository: [https://github.com/diydrones/ardupilot](https://github.com/diydrones/ardupilot)
+Ardupilot is the most advanced, full-featured and reliable open source autopilot software available. It has
+been under development since 2010 by a team of diverse professional engineers and computer scientists. It is
+the only autopilot software capable of controlling almost any vehicle system imaginable, from conventional
+airplanes, quadplanes, multirotors, and helicopters, to rovers, boats,balancebots and even submarines. It is now being expanded to provide
+support for new emerging vehicle types such as compound helicopters.
 
->>Main developer wiki: [http://dev.ardupilot.com](http://dev.ardupilot.com)
+## The ArduPilot project is made up of: ##
 
->>Developer email group: drones-discuss@googlegroups.com
+- ArduCopter (or APM:Copter) : [code](https://github.com/ArduPilot/ardupilot/tree/master/ArduCopter), [wiki](https://ardupilot.org/copter/index.html)
 
-### Contributors ###
->>[Github statistics](https://github.com/diydrones/ardupilot/graphs/contributors)
+- ArduPlane (or APM:Plane) : [code](https://github.com/ArduPilot/ardupilot/tree/master/ArduPlane), [wiki](https://ardupilot.org/plane/index.html)
 
-### Dronecode.org ###
+- ArduRover (or Rover) : [code](https://github.com/ArduPilot/ardupilot/tree/master/Rover), [wiki](https://ardupilot.org/rover/index.html)
 
->>ArduPilot is part of Dronecode.org, a Linux Foundation collaborative project.
+- ArduSub (or APM:Sub) : [code](https://github.com/ArduPilot/ardupilot/tree/master/ArduSub), [wiki](http://ardusub.com/)
 
->>Dronecode encompasses projects that control flight, enable mission planning, and otherwise make drone flight and advanced functionality possible.
+- Antenna Tracker : [code](https://github.com/ArduPilot/ardupilot/tree/master/AntennaTracker), [wiki](https://ardupilot.org/antennatracker/index.html)
 
->>Dronecode development is done at the project level with coordinating and resource allocation performed by the TSC and the Board.
+## User Support & Discussion Forums ##
 
->>For information on the foundation please visit https://www.dronecode.org and https://github.com/Dronecode for further information or contact celder@dronecode.org
+- Support Forum: <https://discuss.ardupilot.org/>
 
-### How To Get Involved ###
->>The ArduPilot project is open source and we encourage participation and code contributions: [guidelines for contributors to the ardupilot codebase](http://dev.ardupilot.com/wiki/guidelines-for-contributors-to-the-apm-codebase)
+- Community Site: <https://ardupilot.org>
 
->>We have an active group of Beta Testers especially for ArduCopter to help us find bugs: [release procedures](http://dev.ardupilot.com/wiki/release-procedures)
+## Developer Information ##
 
->>Desired Enhancements and Bugs can be posted to the [issues list](https://github.com/diydrones/ardupilot/issues).
+- Github repository: <https://github.com/ArduPilot/ardupilot>
 
->>Helping other users with log analysis on [diydrones.com](http://www.diydrones.com) and the [APM forums ](http://ardupilot.com/forum/index.php) is always appreciated:
+- Main developer wiki: <https://ardupilot.org/dev/>
 
->>There is a group of wiki editors as well in case documentation is your thing: ardu-wiki-editors@googlegroups.com
+- Developer discussion: <https://discuss.ardupilot.org>
 
->>Developer discussions occur on drones-discuss@google-groups.com
+- Developer chat: <https://gitter.im/ArduPilot/ardupilot>
 
-### License ###
->>[Overview of license](http://dev.ardupilot.com/wiki/license-gplv3)
+## Top Contributors ##
 
->>[Full Text](https://github.com/diydrones/ardupilot/blob/master/COPYING.txt)
+- [Flight code contributors](https://github.com/ArduPilot/ardupilot/graphs/contributors)
+- [Wiki contributors](https://github.com/ArduPilot/ardupilot_wiki/graphs/contributors)
+- [Most active support forum users](https://discuss.ardupilot.org/u?order=post_count&period=quarterly)
+- [Partners who contribute financially](https://ardupilot.org/about/Partners)
 
-### Maintainers ###
->> Ardupilot is comprised of several parts, vehicles and boards. The list below
->> contains the people that regularly contribute to the project and are responsible
->> for reviewing patches on their specific area. See [CONTRIBUTING.md](CONTRIBUTING.md)
->> for more information.
->>
->> - [Andrew Tridgell](https://github.com/tridge)
->>   - ***Vehicle***: AntennaTracker, Plane
->>   - ***Board***: APM1, APM2, Pixhawk
->> - [Randy Mackay](https://github.com/rmackay9)
->>   - ***Vehicle***: Copter
->> - [Robert Lefebvre](https://github.com/R-Lefebvre)
->>   - ***Vehicle***: TradHeli
->> - [Grant Morphett](https://github.com/gmorph):
->>   - ***Vehicle***: Rover
->> - [Matthias Badaire](https://github.com/badzz)
->>   - ***Subsystem***: FRSky
->> - [Paul Riseborough](https://github.com/priseborough)
->>   - ***Subsystem***: AP_NavEKF
->> - [Lucas De Marchi](https://github.com/lucasdemarchi)
->>   - ***Subsystem***: Linux
->> - [Peter Barker](https://github.com/peterbarker)
->>   - ***Subsystem***: DataFlash
->> - [Michael du Breuil](https://github.com/WickedShell)
->>   - ***Subsystem***: uBlox GPS
->> - [Víctor Mayoral Vilches](https://github.com/vmayoral)
->>   - ***Board***: PXF
->> - [Mirko Denecke](https://github.com/mirkix)
->>   - ***Board***: BBBmini
->> - [Georgii Staroselskii](https://github.com/staroselskii)
->>   - ***Board***: NavIO
->> - [Víctor Mayoral Vilches](https://github.com/vmayoral)
->>   - ***Board***: Erle-Brain 2
->> - [Emile Castelnuovo](https://github.com/emilecastelnuovo)
->>   - ***Board***: VRBrain
->> - [Mike McCauley](#)
->>   - ***Board***: Flymaple
->> - [Jonathan Challinger] (https://github.com/3drobotics/ardupilot-solo)
->>   - ***Vehicle***: 3DRobotics Solo ArduPilot maintainer
->> - [Gustavo José de Sousa](https://github.com/guludo)
->>   - ***Subsystem***: Build system
->> - [Craig Elder] (https://github.com/CraigElder)
->>   - ***Administration***: Dronecode Technical Community Manager
+## How To Get Involved ##
+
+- The ArduPilot project is open source and we encourage participation and code contributions: [guidelines for contributors to the ardupilot codebase](https://ardupilot.org/dev/docs/contributing.html)
+
+- We have an active group of Beta Testers especially for ArduCopter to help us find bugs: [release procedures](https://dev.ardupilot.org/wiki/release-procedures)
+
+- Desired Enhancements and Bugs can be posted to the [issues list](https://github.com/ArduPilot/ardupilot/issues).
+
+- Help other users with log analysis in the [support forums](https://discuss.ardupilot.org/)
+
+- Improve the wiki and chat with other [wiki editors on Gitter](https://gitter.im/ArduPilot/ardupilot_wiki)
+
+- Contact the developers on one of the [communication channels](https://ardupilot.org/copter/docs/common-contact-us.html)
+
+## License ##
+
+The ArduPilot project is licensed under the GNU General Public
+License, version 3.
+
+- [Overview of license](https://dev.ardupilot.com/wiki/license-gplv3)
+
+- [Full Text](https://github.com/ArduPilot/ardupilot/blob/master/COPYING.txt)
+
+## Maintainers ##
+
+Ardupilot is comprised of several parts, vehicles and boards. The list below
+contains the people that regularly contribute to the project and are responsible
+for reviewing patches on their specific area.
+
+- [Andrew Tridgell](https://github.com/tridge):
+  - ***Vehicle***: Plane, AntennaTracker
+  - ***Board***: APM1, APM2, Pixhawk, Pixhawk2, PixRacer
+- [Francisco Ferreira](https://github.com/oxinarf):
+  - ***Bug Master***
+- [Grant Morphett](https://github.com/gmorph):
+  - ***Vehicle***: Rover
+- [Jacob Walser](https://github.com/jaxxzer):
+  - ***Vehicle***: Sub
+- [Lucas De Marchi](https://github.com/lucasdemarchi):
+  - ***Subsystem***: Linux
+- [Michael du Breuil](https://github.com/WickedShell):
+  - ***Subsystem***: Batteries
+  - ***Subsystem***: GPS
+  - ***Subsystem***: Scripting
+- [Peter Barker](https://github.com/peterbarker):
+  - ***Subsystem***: DataFlash, Tools
+- [Randy Mackay](https://github.com/rmackay9):
+  - ***Vehicle***: Copter, Rover, AntennaTracker
+- [Tom Pittenger](https://github.com/magicrub):
+  - ***Vehicle***: Plane
+- [Bill Geyer](https://github.com/bnsgeyer):
+  - ***Vehicle***: TradHeli
+- [Chris Olson](https://github.com/ChristopherOlson):
+  - ***Vehicle***: TradHeli
+- [Emile Castelnuovo](https://github.com/emilecastelnuovo):
+  - ***Board***: VRBrain
+- [Eugene Shamaev](https://github.com/EShamaev):
+  - ***Subsystem***: CAN bus
+  - ***Subsystem***: UAVCAN
+- [Georgii Staroselskii](https://github.com/staroselskii):
+  - ***Board***: NavIO
+- [Gustavo José de Sousa](https://github.com/guludo):
+  - ***Subsystem***: Build system
+- [Julien Beraud](https://github.com/jberaud):
+  - ***Board***: Bebop & Bebop 2
+- [Leonard Hall](https://github.com/lthall):
+  - ***Subsystem***: Copter attitude control and navigation
+- [Matt Lawrence](https://github.com/Pedals2Paddles):
+  - ***Vehicle***: 3DR Solo & Solo based vehicles
+- [Matthias Badaire](https://github.com/badzz):
+  - ***Subsystem***: FRSky
+- [Mirko Denecke](https://github.com/mirkix):
+  - ***Board***: BBBmini, BeagleBone Blue, PocketPilot
+- [Paul Riseborough](https://github.com/priseborough):
+  - ***Subsystem***: AP_NavEKF2
+  - ***Subsystem***: AP_NavEKF3
+- [Pierre Kancir](https://github.com/khancyr):
+  - ***Subsystem***: Copter SITL, Rover SITL
+- [Víctor Mayoral Vilches](https://github.com/vmayoral):
+  - ***Board***: PXF, Erle-Brain 2, PXFmini
+- [Amilcar Lucas](https://github.com/amilcarlucas):
+  - ***Subsystem***: Marvelmind
+- [Samuel Tabor](https://github.com/samuelctabor):
+  - ***Subsystem***: Soaring/Gliding

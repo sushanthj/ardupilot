@@ -1,6 +1,5 @@
-/// -*- tab-width: 4; Mode: C++; c-basic-offset: 4; indent-tabs-mode: nil -*-
 /*
-   Please contribute your ideas! See http://dev.ardupilot.com for details
+   Please contribute your ideas! See https://dev.ardupilot.org for details
 
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -19,9 +18,7 @@
   Management for hal.storage to allow for backwards compatible mapping
   of storage offsets to available storage
  */
-
-#ifndef _STORAGEMANAGER_H_
-#define _STORAGEMANAGER_H_
+#pragma once
 
 #include <AP_HAL/AP_HAL.h>
 
@@ -30,11 +27,15 @@
   storage. Use larger areas for other boards
  */
 #if HAL_STORAGE_SIZE >= 16384
-#define STORAGE_NUM_AREAS 12
+#define STORAGE_NUM_AREAS 15
+#elif HAL_STORAGE_SIZE >= 15360
+#define STORAGE_NUM_AREAS 11
 #elif HAL_STORAGE_SIZE >= 8192
-#define STORAGE_NUM_AREAS 8
+#define STORAGE_NUM_AREAS 10
 #elif HAL_STORAGE_SIZE >= 4096
 #define STORAGE_NUM_AREAS 4
+#elif HAL_STORAGE_SIZE > 0
+#define STORAGE_NUM_AREAS 1
 #else
 #error "Unsupported storage size"
 #endif
@@ -49,14 +50,14 @@ public:
         StorageParam   = 0,
         StorageFence   = 1,
         StorageRally   = 2,
-        StorageMission = 3
+        StorageMission = 3,
+        StorageKeys    = 4,
+        StorageBindInfo= 5,
+        StorageCANDNA  = 6
     };
 
     // erase whole of storage
     static void erase(void);
-
-    // setup for copter layout of storage
-    static void set_layout_copter(void) { layout = layout_copter; }
 
 private:
     struct StorageArea {
@@ -66,9 +67,7 @@ private:
     };
 
     // available layouts
-    static const StorageArea layout_copter[STORAGE_NUM_AREAS];
-    static const StorageArea layout_default[STORAGE_NUM_AREAS];
-    static const StorageArea *layout;
+    static const StorageArea layout[STORAGE_NUM_AREAS];
 };
 
 /*
@@ -88,10 +87,12 @@ public:
 
     // helper functions
     uint8_t  read_byte(uint16_t loc) const;
+    uint8_t  read_uint8(uint16_t loc) const { return read_byte(loc); }
     uint16_t read_uint16(uint16_t loc) const;
     uint32_t read_uint32(uint16_t loc) const;
 
     void write_byte(uint16_t loc, uint8_t value) const;
+    void write_uint8(uint16_t loc, uint8_t value) const { return write_byte(loc, value); }
     void write_uint16(uint16_t loc, uint16_t value) const;
     void write_uint32(uint16_t loc, uint32_t value) const;
 
@@ -99,5 +100,3 @@ private:
     const StorageManager::StorageType type;
     uint16_t total_size;
 };
-
-#endif // _STORAGEMANAGER_H_

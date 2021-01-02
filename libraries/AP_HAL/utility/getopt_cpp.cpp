@@ -35,9 +35,14 @@
  * SUCH DAMAGE.
  */
 
+#include <AP_HAL/AP_HAL.h>
+
 #include "getopt_cpp.h"
 #include <stdio.h>
 #include <string.h>
+
+#define GETOPT_ERROR(...) ::printf(__VA_ARGS__)
+
 
 /*
   constructor
@@ -47,7 +52,7 @@ GetOptLong::GetOptLong(int _argc, char *const _argv[], const char *_optstring, c
     optind(1),
     optopt(0),
     longindex(-1),
-    optarg(NULL),
+    optarg(nullptr),
     argc(_argc),
     argv(_argv),
     optstring(_optstring),
@@ -96,7 +101,7 @@ int GetOptLong::getoption(void)
             place++;
             
             namelen = strcspn(place, "=");
-            for (i = 0; longopts[i].name != NULL; i++)
+            for (i = 0; longopts[i].name != nullptr; i++)
             {
                 if (strlen(longopts[i].name) == namelen
                     && strncmp(place, longopts[i].name, namelen) == 0)
@@ -114,10 +119,10 @@ int GetOptLong::getoption(void)
                         {
                             if (optstring[0] == ':')
                                 return BADARG;
-                            if (opterr)
-                                fprintf(stderr,
-                                        "%s: option requires an argument -- %s\n",
-                                        argv[0], place);
+                            if (opterr) {
+                                GETOPT_ERROR("%s: option requires an argument -- %s\n",
+                                             argv[0], place);
+                            }
                             place = "";
                             optind++;
                             return BADCH;
@@ -125,7 +130,7 @@ int GetOptLong::getoption(void)
                     }
                     else
                     {
-                        optarg = NULL;
+                        optarg = nullptr;
                         if (place[namelen] != 0)
                         {
                             /* XXX error? */
@@ -138,7 +143,7 @@ int GetOptLong::getoption(void)
                     
                     place = "";
                     
-                    if (longopts[i].flag == NULL)
+                    if (longopts[i].flag == nullptr)
                         return longopts[i].val;
                     else
                     {
@@ -148,9 +153,9 @@ int GetOptLong::getoption(void)
                 }
             }
             
-            if (opterr && optstring[0] != ':')
-                fprintf(stderr,
-                        "%s: illegal option -- %s\n", argv[0], place);
+            if (opterr && optstring[0] != ':') {
+                GETOPT_ERROR("%s: illegal option -- %s\n", argv[0], place);
+            }
             place = "";
             optind++;
             return BADCH;
@@ -165,15 +170,15 @@ int GetOptLong::getoption(void)
     {
         if (!*place)
             ++optind;
-        if (opterr && *optstring != ':')
-            fprintf(stderr,
-                    "%s: illegal option -- %c\n", argv[0], optopt);
+        if (opterr && *optstring != ':') {
+            GETOPT_ERROR("%s: illegal option -- %c\n", argv[0], optopt);
+        }
         return BADCH;
     }
     
     if (oli[1] != ':')
     { /* don't need argument */
-        optarg = NULL;
+        optarg = nullptr;
         if (!*place)
             ++optind;
     }
@@ -186,10 +191,10 @@ int GetOptLong::getoption(void)
             place = "";
             if (*optstring == ':')
                 return BADARG;
-            if (opterr)
-                fprintf(stderr,
-                        "%s: option requires an argument -- %c\n",
-                        argv[0], optopt);
+            if (opterr) {
+                GETOPT_ERROR("%s: option requires an argument -- %c\n",
+                             argv[0], optopt);
+            }
             return BADCH;
         }
         else

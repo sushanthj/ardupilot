@@ -1,4 +1,3 @@
-// -*- tab-width: 4; Mode: C++; c-basic-offset: 4; indent-tabs-mode: nil -*-
 /*
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -17,12 +16,14 @@
   handle vehicle <-> GCS communications for terrain library
  */
 
+#include "AP_Terrain.h"
+
+#include <AP_AHRS/AP_AHRS.h>
 #include <AP_HAL/AP_HAL.h>
 #include <AP_Common/AP_Common.h>
 #include <AP_Math/AP_Math.h>
 #include <GCS_MAVLink/GCS_MAVLink.h>
 #include <GCS_MAVLink/GCS.h>
-#include "AP_Terrain.h"
 
 #if AP_TERRAIN_AVAILABLE
 
@@ -38,6 +39,10 @@ bool AP_Terrain::request_missing(mavlink_channel_t chan, struct grid_cache &gcac
 {
     struct grid_block &grid = gcache.grid;
 
+    if (options.get() & uint16_t(Options::DisableDownload)) {
+        return false;
+    }
+
     if (grid.spacing != grid_spacing) {
         // an invalid grid
         return false;
@@ -45,7 +50,7 @@ bool AP_Terrain::request_missing(mavlink_channel_t chan, struct grid_cache &gcac
 
     // see if we are waiting for disk read
     if (gcache.state == GRID_CACHE_DISKWAIT) {
-        // don't request data from the GCS till we know its not on disk
+        // don't request data from the GCS till we know it's not on disk
         return false;
     }
 
@@ -55,7 +60,7 @@ bool AP_Terrain::request_missing(mavlink_channel_t chan, struct grid_cache &gcac
         return false;
     }
 
-    if (comm_get_txspace(chan) < MAVLINK_NUM_NON_PAYLOAD_BYTES + MAVLINK_MSG_ID_TERRAIN_REQUEST_LEN) {
+    if (!HAVE_PAYLOAD_SPACE(chan, TERRAIN_REQUEST)) {
         // not enough buffer space
         return false;
     }
@@ -80,11 +85,26 @@ bool AP_Terrain::request_missing(mavlink_channel_t chan, const struct grid_info 
 }
 
 /*
+  send any pending cache requests
+ */
+bool AP_Terrain::send_cache_request(mavlink_channel_t chan)
+{
+    for (uint16_t i=0; i<cache_size; i++) {
+        if (cache[i].state >= GRID_CACHE_VALID) {
+            if (request_missing(chan, cache[i])) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+/*
   send any pending terrain request to the GCS
  */
 void AP_Terrain::send_request(mavlink_channel_t chan)
 {
-    if (enable == 0 || !allocate()) {
+    if (!allocate()) {
         // not enabled
         return;
     }
@@ -93,8 +113,12 @@ void AP_Terrain::send_request(mavlink_channel_t chan)
     schedule_disk_io();
 
     Location loc;
-    if (!ahrs.get_position(loc)) {
-        // we don't know where we are
+    if (!AP::ahrs().get_position(loc)) {
+        // we don't know where we are. Send a report and request any cached blocks.
+        // this allows for download of mission items when we have no GPS lock
+        loc = {};
+        send_terrain_report(chan, loc, true);
+        send_cache_request(chan);
         return;
     }
 
@@ -119,9 +143,8 @@ void AP_Terrain::send_request(mavlink_channel_t chan)
     for (int8_t x=-1; x<=1; x++) {
         for (int8_t y=-1; y<=1; y++) {
             Location loc2 = loc;
-            location_offset(loc2, 
-                            x*TERRAIN_GRID_BLOCK_SIZE_X*0.7f*grid_spacing,
-                            y*TERRAIN_GRID_BLOCK_SIZE_Y*0.7f*grid_spacing);
+            loc2.offset(x*TERRAIN_GRID_BLOCK_SIZE_X*0.7f*grid_spacing,
+                        y*TERRAIN_GRID_BLOCK_SIZE_Y*0.7f*grid_spacing);
             struct grid_info info2;
             calculate_grid_info(loc2, info2);            
             if (request_missing(chan, info2)) {
@@ -131,12 +154,8 @@ void AP_Terrain::send_request(mavlink_channel_t chan)
     }
 
     // check cache blocks that may have been setup by a TERRAIN_CHECK
-    for (uint16_t i=0; i<cache_size; i++) {
-        if (cache[i].state >= GRID_CACHE_VALID) {
-            if (request_missing(chan, cache[i])) {
-                return;
-            }
-        }
+    if (send_cache_request(chan)) {
+        return;
     }
 
     // request the current loc last to ensure it has highest last
@@ -149,7 +168,7 @@ void AP_Terrain::send_request(mavlink_channel_t chan)
 /*
   count bits in a uint64_t
 */
-uint8_t AP_Terrain::bitcount64(uint64_t b)
+uint8_t AP_Terrain::bitcount64(uint64_t b) const
 {
     return __builtin_popcount((unsigned)(b&0xFFFFFFFF)) + __builtin_popcount((unsigned)(b>>32));
 }
@@ -157,7 +176,7 @@ uint8_t AP_Terrain::bitcount64(uint64_t b)
 /*
   get some statistics for TERRAIN_REPORT
 */
-void AP_Terrain::get_statistics(uint16_t &pending, uint16_t &loaded)
+void AP_Terrain::get_statistics(uint16_t &pending, uint16_t &loaded) const
 {
     pending = 0;
     loaded = 0;
@@ -188,11 +207,11 @@ void AP_Terrain::get_statistics(uint16_t &pending, uint16_t &loaded)
 /* 
    handle terrain messages from GCS
  */
-void AP_Terrain::handle_data(mavlink_channel_t chan, mavlink_message_t *msg)
+void AP_Terrain::handle_data(mavlink_channel_t chan, const mavlink_message_t &msg)
 {
-    if (msg->msgid == MAVLINK_MSG_ID_TERRAIN_DATA) {
+    if (msg.msgid == MAVLINK_MSG_ID_TERRAIN_DATA) {
         handle_terrain_data(msg);
-    } else if (msg->msgid == MAVLINK_MSG_ID_TERRAIN_CHECK) {
+    } else if (msg.msgid == MAVLINK_MSG_ID_TERRAIN_CHECK) {
         handle_terrain_check(chan, msg);
     }
 }
@@ -207,15 +226,19 @@ void AP_Terrain::send_terrain_report(mavlink_channel_t chan, const Location &loc
     float home_terrain_height = 0;
     uint16_t spacing = 0;
     Location current_loc;
+    const AP_AHRS &ahrs = AP::ahrs();
     if (ahrs.get_position(current_loc) &&
-        height_amsl(ahrs.get_home(), home_terrain_height) &&
-        height_amsl(loc, terrain_height)) {
+        height_amsl(ahrs.get_home(), home_terrain_height, false) &&
+        height_amsl(loc, terrain_height, false)) {
         // non-zero spacing indicates we have data
         spacing = grid_spacing;
     } else if (extrapolate && have_current_loc_height) {
         // show the extrapolated height, so logs show what height is
         // being used for navigation
         terrain_height = last_current_loc_height;
+    } else {
+        // report terrain height if we can, but can't give current_height
+        height_amsl(loc, terrain_height, false);
     }
     uint16_t pending, loaded;
     get_statistics(pending, loaded);
@@ -224,7 +247,7 @@ void AP_Terrain::send_terrain_report(mavlink_channel_t chan, const Location &loc
     if (spacing == 0 && !(extrapolate && have_current_loc_height)) {
         current_height = 0;
     } else {
-        if (current_loc.flags.relative_alt) {
+        if (current_loc.relative_alt) {
             current_height = current_loc.alt*0.01f;
         } else {
             current_height = (current_loc.alt - ahrs.get_home().alt)*0.01f;
@@ -232,7 +255,7 @@ void AP_Terrain::send_terrain_report(mavlink_channel_t chan, const Location &loc
     }
     current_height += home_terrain_height - terrain_height;
 
-    if (comm_get_txspace(chan) >= MAVLINK_NUM_NON_PAYLOAD_BYTES + MAVLINK_MSG_ID_TERRAIN_REPORT_LEN) {
+    if (HAVE_PAYLOAD_SPACE(chan, TERRAIN_REPORT)) {
         mavlink_msg_terrain_report_send(chan, loc.lat, loc.lng, spacing, 
                                         terrain_height, current_height,
                                         pending, loaded);
@@ -242,10 +265,10 @@ void AP_Terrain::send_terrain_report(mavlink_channel_t chan, const Location &loc
 /* 
    handle TERRAIN_CHECK messages from GCS
  */
-void AP_Terrain::handle_terrain_check(mavlink_channel_t chan, mavlink_message_t *msg)
+void AP_Terrain::handle_terrain_check(mavlink_channel_t chan, const mavlink_message_t &msg)
 {
     mavlink_terrain_check_t packet;
-    mavlink_msg_terrain_check_decode(msg, &packet);
+    mavlink_msg_terrain_check_decode(&msg, &packet);
     Location loc;
     loc.lat = packet.lat;
     loc.lng = packet.lon;
@@ -255,15 +278,15 @@ void AP_Terrain::handle_terrain_check(mavlink_channel_t chan, mavlink_message_t 
 /* 
    handle TERRAIN_DATA messages from GCS
  */
-void AP_Terrain::handle_terrain_data(mavlink_message_t *msg)
+void AP_Terrain::handle_terrain_data(const mavlink_message_t &msg)
 {
     mavlink_terrain_data_t packet;
-    mavlink_msg_terrain_data_decode(msg, &packet);
+    mavlink_msg_terrain_data_decode(&msg, &packet);
 
     uint16_t i;
     for (i=0; i<cache_size; i++) {
-        if (cache[i].grid.lat == packet.lat && 
-            cache[i].grid.lon == packet.lon && 
+        if (TERRAIN_LATLON_EQUAL(cache[i].grid.lat,packet.lat) &&
+            TERRAIN_LATLON_EQUAL(cache[i].grid.lon,packet.lon) &&
             cache[i].grid.spacing == packet.grid_spacing &&
             grid_spacing == packet.grid_spacing &&
             packet.gridbit < 56) {
@@ -301,7 +324,7 @@ void AP_Terrain::handle_terrain_data(mavlink_message_t *msg)
         Location loc2;
         loc2.lat = grid.lat;
         loc2.lng = grid.lon;
-        location_offset(loc2, 28*grid_spacing, 32*grid_spacing);
+        loc2.offset(28*grid_spacing, 32*grid_spacing);
         hal.console->printf("--lat=%12.7f --lon=%12.7f %u\n",
                             loc2.lat*1.0e-7f,
                             loc2.lng*1.0e-7f,

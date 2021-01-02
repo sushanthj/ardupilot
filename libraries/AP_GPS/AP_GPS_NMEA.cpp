@@ -1,4 +1,3 @@
-// -*- tab-width: 4; Mode: C++; c-basic-offset: 4; indent-tabs-mode: nil -*-
 /*
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -34,6 +33,7 @@
 #include <ctype.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <stdio.h>
 
 #include "AP_GPS_NMEA.h"
 
@@ -46,75 +46,10 @@ extern const AP_HAL::HAL& hal;
 #include <stdio.h>
 #endif
 
-// SiRF init messages //////////////////////////////////////////////////////////
-//
-// Note that we will only see a SiRF in NMEA mode if we are explicitly configured
-// for NMEA.  GPS_AUTO will try to set any SiRF unit to binary mode as part of
-// the autodetection process.
-//
-#define SIRF_INIT_MSG \
-        "$PSRF103,0,0,1,1*25\r\n"   /* GGA @ 1Hz */ \
-        "$PSRF103,1,0,0,1*25\r\n"   /* GLL off */   \
-        "$PSRF103,2,0,0,1*26\r\n"   /* GSA off */   \
-        "$PSRF103,3,0,0,1*27\r\n"   /* GSV off */   \
-        "$PSRF103,4,0,1,1*20\r\n"   /* RMC off */   \
-        "$PSRF103,5,0,1,1*20\r\n"   /* VTG @ 1Hz */ \
-        "$PSRF103,6,0,0,1*22\r\n"   /* MSS off */   \
-        "$PSRF103,8,0,0,1*2C\r\n"   /* ZDA off */   \
-        "$PSRF151,1*3F\r\n"         /* WAAS on (not always supported) */ \
-        "$PSRF106,21*0F\r\n"        /* datum = WGS84 */
-
-// MediaTek init messages //////////////////////////////////////////////////////
-//
-// Note that we may see a MediaTek in NMEA mode if we are connected to a non-DIYDrones
-// MediaTek-based GPS.
-//
-#define MTK_INIT_MSG \
-    "$PMTK314,0,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0*29\r\n" /* RMC, GGA & VTG once every fix */ \
-    "$PMTK330,0*2E\r\n"                                 /* datum = WGS84 */ \
-    "$PMTK313,1*2E\r\n"                                 /* SBAS on */ \
-    "$PMTK301,2*2E\r\n"                                 /* use SBAS data for DGPS */
-
-// ublox init messages /////////////////////////////////////////////////////////
-//
-// Note that we will only see a ublox in NMEA mode if we are explicitly configured
-// for NMEA.  GPS_AUTO will try to set any ublox unit to binary mode as part of
-// the autodetection process.
-//
-// We don't attempt to send $PUBX,41 as the unit must already be talking NMEA
-// and we don't know the baudrate.
-//
-#define UBLOX_INIT_MSG \
-    "$PUBX,40,gga,0,1,0,0,0,0*7B\r\n"   /* GGA on at one per fix */ \
-    "$PUBX,40,vtg,0,1,0,0,0,0*7F\r\n"   /* VTG on at one per fix */ \
-    "$PUBX,40,rmc,0,0,0,0,0,0*67\r\n"   /* RMC off (XXX suppress other message types?) */
-
-const char AP_GPS_NMEA::_initialisation_blob[] = SIRF_INIT_MSG MTK_INIT_MSG UBLOX_INIT_MSG;
-
-// NMEA message identifiers ////////////////////////////////////////////////////
-//
-const char AP_GPS_NMEA::_gprmc_string[] = "GPRMC";
-const char AP_GPS_NMEA::_gpgga_string[] = "GPGGA";
-const char AP_GPS_NMEA::_gpvtg_string[] = "GPVTG";
-
 // Convenience macros //////////////////////////////////////////////////////////
 //
 #define DIGIT_TO_VAL(_x)        (_x - '0')
-#define hexdigit(x) ((x)>9?'A'+(x):'0'+(x))
-
-AP_GPS_NMEA::AP_GPS_NMEA(AP_GPS &_gps, AP_GPS::GPS_State &_state, AP_HAL::UARTDriver *_port) :
-    AP_GPS_Backend(_gps, _state, _port),
-    _parity(0),
-    _is_checksum_term(false),
-    _sentence_type(0),
-    _term_number(0),
-    _term_offset(0),
-    _gps_data_good(false)
-{
-    gps.send_blob_start(state.instance, _initialisation_blob, sizeof(_initialisation_blob));
-    // this guarantees that _term is always nul terminated
-    memset(_term, 0, sizeof(_term));
-}
+#define hexdigit(x) ((x)>9?'A'+((x)-10):'0'+(x))
 
 bool AP_GPS_NMEA::read(void)
 {
@@ -125,11 +60,11 @@ bool AP_GPS_NMEA::read(void)
     while (numc--) {
         char c = port->read();
 #ifdef NMEA_LOG_PATH
-        static FILE *logf = NULL;
-        if (logf == NULL) {
+        static FILE *logf = nullptr;
+        if (logf == nullptr) {
             logf = fopen(NMEA_LOG_PATH, "wb");
         }
-        if (logf != NULL) {
+        if (logf != nullptr) {
             ::fwrite(&c, 1, 1, logf);
         }
 #endif
@@ -140,17 +75,57 @@ bool AP_GPS_NMEA::read(void)
     return parsed;
 }
 
+/*
+  formatted print of NMEA message to the port, with checksum appended
+ */
+bool AP_GPS_NMEA::nmea_printf(const char *fmt, ...) const
+{
+    char *s = nullptr;
+    char trailer[6];
+    va_list ap;
+
+    va_start(ap, fmt);
+    int ret = vasprintf(&s, fmt, ap);
+    va_end(ap);
+    if (ret == -1 || s == nullptr) {
+        // allocation failed
+        return false;
+    }
+
+    // calculate the checksum
+    uint8_t cs = 0;
+    const uint8_t *b = (const uint8_t *)s+1;
+    while (*b) {
+        cs ^= *b++;
+    }
+    uint32_t len = strlen(s);
+    snprintf(trailer, sizeof(trailer), "*%02X\r\n", (unsigned)cs);
+    if (port->txspace() < len + 5) {
+        free(s);
+        return false;
+    }
+    port->write((const uint8_t*)s, len);
+    port->write((const uint8_t*)trailer, 5);
+    free(s);
+    return true;
+}
+
 bool AP_GPS_NMEA::_decode(char c)
 {
     bool valid_sentence = false;
 
+    _sentence_length++;
+        
     switch (c) {
     case ',': // term terminators
         _parity ^= c;
-        /* no break */
+        FALLTHROUGH;
     case '\r':
     case '\n':
     case '*':
+        if (_sentence_done) {
+            return false;
+        }
         if (_term_offset < sizeof(_term)) {
             _term[_term_offset] = 0;
             valid_sentence = _term_complete();
@@ -166,6 +141,8 @@ bool AP_GPS_NMEA::_decode(char c)
         _sentence_type = _GPS_SENTENCE_OTHER;
         _is_checksum_term = false;
         _gps_data_good = false;
+        _sentence_length = 1;
+        _sentence_done = false;
         return valid_sentence;
     }
 
@@ -178,30 +155,29 @@ bool AP_GPS_NMEA::_decode(char c)
     return valid_sentence;
 }
 
-//
-// internal utilities
-//
-int16_t AP_GPS_NMEA::_from_hex(char a)
+int32_t AP_GPS_NMEA::_parse_decimal_100(const char *p)
 {
-    if (a >= 'A' && a <= 'F')
-        return a - 'A' + 10;
-    else if (a >= 'a' && a <= 'f')
-        return a - 'a' + 10;
-    else
-        return a - '0';
-}
+    char *endptr = nullptr;
+    long ret = 100 * strtol(p, &endptr, 10);
+    int sign = ret < 0 ? -1 : 1;
 
-uint32_t AP_GPS_NMEA::_parse_decimal_100()
-{
-    char *p = _term;
-    uint32_t ret = 100UL * atol(p);
-    while (isdigit(*p))
-        ++p;
-    if (*p == '.') {
-        if (isdigit(p[1])) {
-            ret += 10 * DIGIT_TO_VAL(p[1]);
-            if (isdigit(p[2]))
-                ret += DIGIT_TO_VAL(p[2]);
+    if (ret >= (long)INT32_MAX) {
+        return INT32_MAX;
+    }
+    if (ret <= (long)INT32_MIN) {
+        return INT32_MIN;
+    }
+    if (endptr == nullptr || *endptr != '.') {
+        return ret;
+    }
+
+    if (isdigit(endptr[1])) {
+        ret += sign * 10 * DIGIT_TO_VAL(endptr[1]);
+        if (isdigit(endptr[2])) {
+            ret += sign * DIGIT_TO_VAL(endptr[2]);
+            if (isdigit(endptr[3])) {
+                ret += sign * (DIGIT_TO_VAL(endptr[3]) >= 5);
+            }
         }
     }
     return ret;
@@ -257,25 +233,61 @@ uint32_t AP_GPS_NMEA::_parse_degrees()
  */
 bool AP_GPS_NMEA::_have_new_message()
 {
-    if (_last_GPRMC_ms == 0 ||
-        _last_GPGGA_ms == 0) {
+    if (_last_RMC_ms == 0 ||
+        _last_GGA_ms == 0) {
         return false;
     }
     uint32_t now = AP_HAL::millis();
-    if (now - _last_GPRMC_ms > 150 ||
-        now - _last_GPGGA_ms > 150) {
+    if (now - _last_RMC_ms > 150 ||
+        now - _last_GGA_ms > 150) {
         return false;
     }
-    if (_last_GPVTG_ms != 0 && 
-        now - _last_GPVTG_ms > 150) {
+    if (_last_VTG_ms != 0 && 
+        now - _last_VTG_ms > 150) {
         return false;
     }
+
+    /*
+      if we have seen the $PHD messages then wait for them again. This
+      is important as the have_vertical_velocity field will be
+      overwritten by fill_3d_velocity()
+     */
+    if (_last_PHD_12_ms != 0 &&
+        now - _last_PHD_12_ms > 150 &&
+        now - _last_PHD_12_ms < 1000) {
+        // waiting on PHD_12
+        return false;
+    }
+    if (_last_PHD_26_ms != 0 &&
+        now - _last_PHD_26_ms > 150 &&
+        now - _last_PHD_26_ms < 1000) {
+        // waiting on PHD_26
+        return false;
+    }
+
     // prevent these messages being used again
-    if (_last_GPVTG_ms != 0) {
-        _last_GPVTG_ms = 1;
+    if (_last_VTG_ms != 0) {
+        _last_VTG_ms = 1;
     }
-    _last_GPGGA_ms = 1;
-    _last_GPRMC_ms = 1;
+
+    if (now - _last_HDT_ms > 300) {
+        // we have lost GPS yaw
+        state.have_gps_yaw = false;
+    }
+
+    // special case for fixing low output rate of ALLYSTAR GPS modules
+    const int32_t dt_ms = now - _last_fix_ms;
+    if (labs(dt_ms - gps._rate_ms[state.instance]) > 50 &&
+        get_type() == AP_GPS::GPS_TYPE_ALLYSTAR) {
+        nmea_printf("$PHD,06,42,UUUUTTTT,BB,0,%u,55,0,%u,0,0,0",
+                    1000U/gps._rate_ms[state.instance],
+                    gps._rate_ms[state.instance]);
+    }
+
+    _last_fix_ms = now;
+
+    _last_GGA_ms = 1;
+    _last_RMC_ms = 1;
     return true;
 }
 
@@ -285,42 +297,108 @@ bool AP_GPS_NMEA::_term_complete()
 {
     // handle the last term in a message
     if (_is_checksum_term) {
-        uint8_t checksum = 16 * _from_hex(_term[0]) + _from_hex(_term[1]);
+        _sentence_done = true;
+        uint8_t nibble_high = 0;
+        uint8_t nibble_low  = 0;
+        if (!hex_to_uint8(_term[0], nibble_high) || !hex_to_uint8(_term[1], nibble_low)) {
+            return false;
+        }
+        const uint8_t checksum = (nibble_high << 4u) | nibble_low;
         if (checksum == _parity) {
             if (_gps_data_good) {
+                uint32_t now = AP_HAL::millis();
                 switch (_sentence_type) {
-                case _GPS_SENTENCE_GPRMC:
+                case _GPS_SENTENCE_RMC:
+                    _last_RMC_ms = now;
                     //time                        = _new_time;
                     //date                        = _new_date;
                     state.location.lat     = _new_latitude;
                     state.location.lng     = _new_longitude;
                     state.ground_speed     = _new_speed*0.01f;
-                    state.ground_course_cd = wrap_360_cd(_new_course);
+                    state.ground_course    = wrap_360(_new_course*0.01f);
                     make_gps_time(_new_date, _new_time * 10);
-                    state.last_gps_time_ms = AP_HAL::millis();
-                    // To-Do: add support for proper reporting of 2D and 3D fix
-                    state.status           = AP_GPS::GPS_OK_FIX_3D;
-                    fill_3d_velocity();
+                    set_uart_timestamp(_sentence_length);
+                    state.last_gps_time_ms = now;
+                    if (_last_PHD_12_ms == 0 ||
+                        now - _last_PHD_12_ms > 1000) {
+                        fill_3d_velocity();
+                    }
                     break;
-                case _GPS_SENTENCE_GPGGA:
+                case _GPS_SENTENCE_GGA:
+                    _last_GGA_ms = now;
                     state.location.alt  = _new_altitude;
                     state.location.lat  = _new_latitude;
                     state.location.lng  = _new_longitude;
                     state.num_sats      = _new_satellite_count;
                     state.hdop          = _new_hdop;
-                    // To-Do: add support for proper reporting of 2D and 3D fix
-                    state.status        = AP_GPS::GPS_OK_FIX_3D;
+                    switch(_new_quality_indicator) {
+                    case 0: // Fix not available or invalid
+                        state.status = AP_GPS::NO_FIX;
+                        break;
+                    case 1: // GPS SPS Mode, fix valid
+                        state.status = AP_GPS::GPS_OK_FIX_3D;
+                        break;
+                    case 2: // Differential GPS, SPS Mode, fix valid
+                        state.status = AP_GPS::GPS_OK_FIX_3D_DGPS;
+                        break;
+                    case 3: // GPS PPS Mode, fix valid
+                        state.status = AP_GPS::GPS_OK_FIX_3D;
+                        break;
+                    case 4: // Real Time Kinematic. System used in RTK mode with fixed integers
+                        state.status = AP_GPS::GPS_OK_FIX_3D_RTK_FIXED;
+                        break;
+                    case 5: // Float RTK. Satellite system used in RTK mode, floating integers
+                        state.status = AP_GPS::GPS_OK_FIX_3D_RTK_FLOAT;
+                        break;
+                    case 6: // Estimated (dead reckoning) Mode
+                        state.status = AP_GPS::NO_FIX;
+                        break;
+                    default://to maintain compatibility with MAV_GPS_INPUT and others
+                        state.status = AP_GPS::GPS_OK_FIX_3D;
+                        break;
+                    }
                     break;
-                case _GPS_SENTENCE_GPVTG:
-                    state.ground_speed     = _new_speed*0.01f;
-                    state.ground_course_cd = wrap_360_cd(_new_course);
+                case _GPS_SENTENCE_VTG:
+                    _last_VTG_ms = now;
+                    state.ground_speed  = _new_speed*0.01f;
+                    state.ground_course = wrap_360(_new_course*0.01f);
+                    if (_last_PHD_12_ms == 0 ||
+                        now - _last_PHD_12_ms > 1000) {
+                        fill_3d_velocity();
+                    }
                     // VTG has no fix indicator, can't change fix status
                     break;
+                case _GPS_SENTENCE_HDT:
+                    _last_HDT_ms = now;
+                    state.gps_yaw = wrap_360(_new_gps_yaw*0.01f);
+                    state.have_gps_yaw = true;
+                    // remember that we are setup to provide yaw. With
+                    // a NMEA GPS we can only tell if the GPS is
+                    // configured to provide yaw when it first sends a
+                    // HDT sentence.
+                    state.gps_yaw_configured = true;
+                    break;
+                case _GPS_SENTENCE_PHD:
+                    if (_phd.msg_id == 12) {
+                        state.velocity.x = _phd.fields[0] * 0.01;
+                        state.velocity.y = _phd.fields[1] * 0.01;
+                        state.velocity.z = _phd.fields[2] * 0.01;
+                        state.have_vertical_velocity = true;
+                        _last_PHD_12_ms = now;
+                    } else if (_phd.msg_id == 26) {
+                        state.horizontal_accuracy = MAX(_phd.fields[0],_phd.fields[1]) * 0.001;
+                        state.have_horizontal_accuracy = true;
+                        state.vertical_accuracy = _phd.fields[2] * 0.001;
+                        state.have_vertical_accuracy = true;
+                        state.speed_accuracy = MAX(_phd.fields[3],_phd.fields[4]) * 0.001;
+                        state.have_speed_accuracy = true;
+                        _last_PHD_26_ms = now;
+                    }
                 }
             } else {
                 switch (_sentence_type) {
-                case _GPS_SENTENCE_GPRMC:
-                case _GPS_SENTENCE_GPGGA:
+                case _GPS_SENTENCE_RMC:
+                case _GPS_SENTENCE_GGA:
                     // Only these sentences give us information about
                     // fix status.
                     state.status = AP_GPS::NO_FIX;
@@ -335,17 +413,36 @@ bool AP_GPS_NMEA::_term_complete()
 
     // the first term determines the sentence type
     if (_term_number == 0) {
-        if (!strcmp(_term, _gprmc_string)) {
-            _sentence_type = _GPS_SENTENCE_GPRMC;
-            _last_GPRMC_ms = AP_HAL::millis();
-        } else if (!strcmp(_term, _gpgga_string)) {
-            _sentence_type = _GPS_SENTENCE_GPGGA;
-            _last_GPGGA_ms = AP_HAL::millis();
-        } else if (!strcmp(_term, _gpvtg_string)) {
-            _sentence_type = _GPS_SENTENCE_GPVTG;
+        /*
+          special case for $PHD message
+         */
+        if (strcmp(_term, "PHD") == 0) {
+            _sentence_type = _GPS_SENTENCE_PHD;
+            return false;
+        }
+        /*
+          The first two letters of the NMEA term are the talker
+          ID. The most common is 'GP' but there are a bunch of others
+          that are valid. We accept any two characters here.
+         */
+        if (_term[0] < 'A' || _term[0] > 'Z' ||
+            _term[1] < 'A' || _term[1] > 'Z') {
+            _sentence_type = _GPS_SENTENCE_OTHER;
+            return false;
+        }
+        const char *term_type = &_term[2];
+        if (strcmp(term_type, "RMC") == 0) {
+            _sentence_type = _GPS_SENTENCE_RMC;
+        } else if (strcmp(term_type, "GGA") == 0) {
+            _sentence_type = _GPS_SENTENCE_GGA;
+        } else if (strcmp(term_type, "HDT") == 0) {
+            _sentence_type = _GPS_SENTENCE_HDT;
+            // HDT doesn't have a data qualifier
+            _gps_data_good = true;
+        } else if (strcmp(term_type, "VTG") == 0) {
+            _sentence_type = _GPS_SENTENCE_VTG;
             // VTG may not contain a data qualifier, presume the solution is good
             // unless it tells us otherwise.
-            _last_GPVTG_ms = AP_HAL::millis();
             _gps_data_good = true;
         } else {
             _sentence_type = _GPS_SENTENCE_OTHER;
@@ -353,70 +450,91 @@ bool AP_GPS_NMEA::_term_complete()
         return false;
     }
 
-    // 32 = RMC, 64 = GGA, 96 = VTG
+    // 32 = RMC, 64 = GGA, 96 = VTG, 128 = HDT
     if (_sentence_type != _GPS_SENTENCE_OTHER && _term[0]) {
         switch (_sentence_type + _term_number) {
         // operational status
         //
-        case _GPS_SENTENCE_GPRMC + 2: // validity (RMC)
+        case _GPS_SENTENCE_RMC + 2: // validity (RMC)
             _gps_data_good = _term[0] == 'A';
             break;
-        case _GPS_SENTENCE_GPGGA + 6: // Fix data (GGA)
+        case _GPS_SENTENCE_GGA + 6: // Fix data (GGA)
             _gps_data_good = _term[0] > '0';
+            _new_quality_indicator = _term[0] - '0';
             break;
-        case _GPS_SENTENCE_GPVTG + 9: // validity (VTG) (we may not see this field)
+        case _GPS_SENTENCE_VTG + 9: // validity (VTG) (we may not see this field)
             _gps_data_good = _term[0] != 'N';
             break;
-        case _GPS_SENTENCE_GPGGA + 7: // satellite count (GGA)
+        case _GPS_SENTENCE_GGA + 7: // satellite count (GGA)
             _new_satellite_count = atol(_term);
             break;
-        case _GPS_SENTENCE_GPGGA + 8: // HDOP (GGA)
-            _new_hdop = _parse_decimal_100();
+        case _GPS_SENTENCE_GGA + 8: // HDOP (GGA)
+            _new_hdop = (uint16_t)_parse_decimal_100(_term);
             break;
 
         // time and date
         //
-        case _GPS_SENTENCE_GPRMC + 1: // Time (RMC)
-        case _GPS_SENTENCE_GPGGA + 1: // Time (GGA)
-            _new_time = _parse_decimal_100();
+        case _GPS_SENTENCE_RMC + 1: // Time (RMC)
+        case _GPS_SENTENCE_GGA + 1: // Time (GGA)
+            _new_time = _parse_decimal_100(_term);
             break;
-        case _GPS_SENTENCE_GPRMC + 9: // Date (GPRMC)
+        case _GPS_SENTENCE_RMC + 9: // Date (GPRMC)
             _new_date = atol(_term);
             break;
 
         // location
         //
-        case _GPS_SENTENCE_GPRMC + 3: // Latitude
-        case _GPS_SENTENCE_GPGGA + 2:
+        case _GPS_SENTENCE_RMC + 3: // Latitude
+        case _GPS_SENTENCE_GGA + 2:
             _new_latitude = _parse_degrees();
             break;
-        case _GPS_SENTENCE_GPRMC + 4: // N/S
-        case _GPS_SENTENCE_GPGGA + 3:
+        case _GPS_SENTENCE_RMC + 4: // N/S
+        case _GPS_SENTENCE_GGA + 3:
             if (_term[0] == 'S')
                 _new_latitude = -_new_latitude;
             break;
-        case _GPS_SENTENCE_GPRMC + 5: // Longitude
-        case _GPS_SENTENCE_GPGGA + 4:
+        case _GPS_SENTENCE_RMC + 5: // Longitude
+        case _GPS_SENTENCE_GGA + 4:
             _new_longitude = _parse_degrees();
             break;
-        case _GPS_SENTENCE_GPRMC + 6: // E/W
-        case _GPS_SENTENCE_GPGGA + 5:
+        case _GPS_SENTENCE_RMC + 6: // E/W
+        case _GPS_SENTENCE_GGA + 5:
             if (_term[0] == 'W')
                 _new_longitude = -_new_longitude;
             break;
-        case _GPS_SENTENCE_GPGGA + 9: // Altitude (GPGGA)
-            _new_altitude = _parse_decimal_100();
+        case _GPS_SENTENCE_GGA + 9: // Altitude (GPGGA)
+            _new_altitude = _parse_decimal_100(_term);
             break;
 
         // course and speed
         //
-        case _GPS_SENTENCE_GPRMC + 7: // Speed (GPRMC)
-        case _GPS_SENTENCE_GPVTG + 5: // Speed (VTG)
-            _new_speed = (_parse_decimal_100() * 514) / 1000;       // knots-> m/sec, approximiates * 0.514
+        case _GPS_SENTENCE_RMC + 7: // Speed (GPRMC)
+        case _GPS_SENTENCE_VTG + 5: // Speed (VTG)
+            _new_speed = (_parse_decimal_100(_term) * 514) / 1000;       // knots-> m/sec, approximiates * 0.514
             break;
-        case _GPS_SENTENCE_GPRMC + 8: // Course (GPRMC)
-        case _GPS_SENTENCE_GPVTG + 1: // Course (VTG)
-            _new_course = _parse_decimal_100();
+        case _GPS_SENTENCE_HDT + 1: // Course (HDT)
+            _new_gps_yaw = _parse_decimal_100(_term);
+            break;
+        case _GPS_SENTENCE_RMC + 8: // Course (GPRMC)
+        case _GPS_SENTENCE_VTG + 1: // Course (VTG)
+            _new_course = _parse_decimal_100(_term);
+            break;
+
+        case _GPS_SENTENCE_PHD + 1: // PHD class
+            _phd.msg_class = atol(_term);
+            break;
+        case _GPS_SENTENCE_PHD + 2: // PHD message
+            _phd.msg_id = atol(_term);
+            if (_phd.msg_class == 1 && (_phd.msg_id == 12 || _phd.msg_id == 26)) {
+                // we only support $PHD messages 1/12 and 1/26
+                _gps_data_good = true;
+            }
+            break;
+        case _GPS_SENTENCE_PHD + 5: // PHD message, itow
+            _phd.itow = strtoul(_term, nullptr, 10);
+            break;
+        case _GPS_SENTENCE_PHD + 6 ... _GPS_SENTENCE_PHD + 11: // PHD message, fields
+            _phd.fields[_term_number-6] = atol(_term);
             break;
         }
     }
@@ -454,6 +572,7 @@ AP_GPS_NMEA::_detect(struct NMEA_detect_state &state, uint8_t data)
 		break;
 	case 3:
 		if (hexdigit(state.ck&0xF) == data) {
+            state.step = 0;
 			return true;
 		}
 		state.step = 0;

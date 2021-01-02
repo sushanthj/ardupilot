@@ -12,30 +12,31 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef AP_VEHICLE_TYPE_H
-#define AP_VEHICLE_TYPE_H
+#pragma once
 
 /*
-  define common vehicle build types. Note that the APM_BUILD_DIRECTORY
-  define is only available with makefile based build, not with
-  arduino.
+  define common vehicle build types.
   Also note that code needs to support other APM_BUILD_DIRECTORY
   values for example sketches
  */
-#define APM_BUILD_APMrover2      1
+#define APM_BUILD_Rover      1
 #define APM_BUILD_ArduCopter     2
 #define APM_BUILD_ArduPlane      3
 #define APM_BUILD_AntennaTracker 4
 #define APM_BUILD_UNKNOWN        5
+#define APM_BUILD_Replay         6
+#define APM_BUILD_ArduSub        7
+#define APM_BUILD_iofirmware     8
+#define APM_BUILD_AP_Periph      9
+#define APM_BUILD_AP_DAL_Standalone 10
+#define APM_BUILD_AP_Bootloader  11
+
+#ifndef APM_BUILD_DIRECTORY
+#define APM_BUILD_DIRECTORY APM_BUILD_UNKNOWN
+#endif
 
 /*
   using this macro catches cases where we try to check vehicle type on
   build systems that don't support it
  */
-#ifdef APM_BUILD_DIRECTORY
 #define APM_BUILD_TYPE(type) ((type) == APM_BUILD_DIRECTORY)
-#else
-#define APM_BUILD_TYPE(type) ((type) == APM_BUILD_UNKNOWN)
-#endif
-
-#endif // AP_VEHICLE_TYPE_H

@@ -1,32 +1,37 @@
-// -*- tab-width: 4; Mode: C++; c-basic-offset: 4; indent-tabs-mode: nil -*-
+#pragma once
 
-#ifndef __AP_RANGEFINDER_LIGHTWARESERIAL_H__
-#define __AP_RANGEFINDER_LIGHTWARESERIAL_H__
+#include "AP_RangeFinder.h"
+#include "AP_RangeFinder_Backend_Serial.h"
 
-#include "RangeFinder.h"
-#include "RangeFinder_Backend.h"
-
-class AP_RangeFinder_LightWareSerial : public AP_RangeFinder_Backend
+class AP_RangeFinder_LightWareSerial : public AP_RangeFinder_Backend_Serial
 {
 
 public:
-    // constructor
-    AP_RangeFinder_LightWareSerial(RangeFinder &ranger, uint8_t instance, RangeFinder::RangeFinder_State &_state,
-                                   AP_SerialManager &serial_manager);
 
-    // static detection function
-    static bool detect(RangeFinder &ranger, uint8_t instance, AP_SerialManager &serial_manager);
+    using AP_RangeFinder_Backend_Serial::AP_RangeFinder_Backend_Serial;
 
-    // update state
-    void update(void);
+protected:
+
+    MAV_DISTANCE_SENSOR _get_mav_distance_sensor_type() const override {
+        return MAV_DISTANCE_SENSOR_LASER;
+    }
 
 private:
     // get a reading
-    bool get_reading(uint16_t &reading_cm);
+    bool get_reading(uint16_t &reading_cm) override;
 
-    AP_HAL::UARTDriver *uart = nullptr;
-    uint32_t last_reading_ms = 0;
-    char linebuf[10];
-    uint8_t linebuf_len = 0;
+    char linebuf[10];           // legacy protocol buffer
+    uint8_t linebuf_len;        // legacy protocol buffer length
+    uint32_t last_init_ms;      // init time used to switch lw20 to serial mode
+    uint8_t high_byte;          // binary protocol high byte
+    bool high_byte_received;    // true if high byte has been received
+
+    // automatic protocol decision variables
+    enum class ProtocolState {
+        UNKNOWN,    // the protocol used is not yet known
+        LEGACY,     // legacy protocol, distances are sent as strings
+        BINARY      // binary protocol, distances are sent using two bytes
+    } protocol_state;
+    uint8_t legacy_valid_count;
+    uint8_t binary_valid_count;
 };
-#endif  // __AP_RANGEFINDER_LIGHTWARESERIAL_H__

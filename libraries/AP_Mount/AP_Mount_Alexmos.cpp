@@ -1,10 +1,13 @@
-// -*- tab-width: 4; Mode: C++; c-basic-offset: 4; indent-tabs-mode: nil -*-
 #include "AP_Mount_Alexmos.h"
+#if HAL_MOUNT_ENABLED
+#include <AP_SerialManager/AP_SerialManager.h>
 
 extern const AP_HAL::HAL& hal;
 
-void AP_Mount_Alexmos::init(const AP_SerialManager& serial_manager)
+void AP_Mount_Alexmos::init()
 {
+    const AP_SerialManager& serial_manager = AP::serialmanager();
+
     // check for alexmos protcol
     if ((_port = serial_manager.find_serial(AP_SerialManager::SerialProtocol_AlexMos, 0))) {
         _initialised = true;
@@ -37,6 +40,7 @@ void AP_Mount_Alexmos::update()
         // point to the angles given by a mavlink message
         case MAV_MOUNT_MODE_MAVLINK_TARGETING:
             // do nothing because earth-frame angle targets (i.e. _angle_ef_target_rad) should have already been set by a MOUNT_CONTROL message from GCS
+            control_axis(_angle_ef_target_rad, false);
             break;
 
         // RC radio manual angle control, but with stabilization from the AHRS
@@ -48,8 +52,27 @@ void AP_Mount_Alexmos::update()
 
         // point mount to a GPS point given by the mission planner
         case MAV_MOUNT_MODE_GPS_POINT:
-            if(_frontend._ahrs.get_gps().status() >= AP_GPS::GPS_OK_FIX_2D) {
-                calc_angle_to_location(_state._roi_target, _angle_ef_target_rad, true, false);
+            if (calc_angle_to_roi_target(_angle_ef_target_rad, true, false)) {
+                control_axis(_angle_ef_target_rad, false);
+            }
+            break;
+
+        case MAV_MOUNT_MODE_HOME_LOCATION:
+            // constantly update the home location:
+            if (!AP::ahrs().home_is_set()) {
+                break;
+            }
+            _state._roi_target = AP::ahrs().get_home();
+            _state._roi_target_set = true;
+            if (calc_angle_to_roi_target(_angle_ef_target_rad, true, false)) {
+                control_axis(_angle_ef_target_rad, false);
+            }
+            break;
+
+        case MAV_MOUNT_MODE_SYSID_TARGET:
+            if (calc_angle_to_sysid_target(_angle_ef_target_rad,
+                                           true,
+                                           false)) {
                 control_axis(_angle_ef_target_rad, false);
             }
             break;
@@ -73,8 +96,8 @@ void AP_Mount_Alexmos::set_mode(enum MAV_MOUNT_MODE mode)
     _state._mode = mode;
 }
 
-// status_msg - called to allow mounts to send their status to GCS using the MOUNT_STATUS message
-void AP_Mount_Alexmos::status_msg(mavlink_channel_t chan)
+// send_mount_status - called to allow mounts to send their status to GCS using the MOUNT_STATUS message
+void AP_Mount_Alexmos::send_mount_status(mavlink_channel_t chan)
 {
     if (!_initialised) {
         return;
@@ -165,7 +188,7 @@ void AP_Mount_Alexmos::write_params()
 */
 void AP_Mount_Alexmos::send_command(uint8_t cmd, uint8_t* data, uint8_t size)
 {
-    if (_port->txspace() < (size + 5)) {
+    if (_port->txspace() < (size + 5U)) {
         return;
     }
     uint8_t checksum = 0;
@@ -267,7 +290,7 @@ void AP_Mount_Alexmos::read_incoming()
             case 4: // parsing body
                 _checksum += data;
                 if (_payload_counter < sizeof(_buffer)) {
-                    _buffer.bytes[_payload_counter] = data;
+                    _buffer[_payload_counter] = data;
                 }
                 if (++_payload_counter == _payload_length)
                     _step++;
@@ -282,3 +305,4 @@ void AP_Mount_Alexmos::read_incoming()
         }
     }
 }
+#endif // HAL_MOUNT_ENABLED

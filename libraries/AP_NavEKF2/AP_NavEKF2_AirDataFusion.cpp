@@ -1,15 +1,7 @@
-/// -*- tab-width: 4; Mode: C++; c-basic-offset: 4; indent-tabs-mode: nil -*-
-
 #include <AP_HAL/AP_HAL.h>
-
-#if HAL_CPU_CLASS >= HAL_CPU_CLASS_150
 
 #include "AP_NavEKF2.h"
 #include "AP_NavEKF2_core.h"
-#include <AP_AHRS/AP_AHRS.h>
-#include <AP_Vehicle/AP_Vehicle.h>
-
-#include <stdio.h>
 
 extern const AP_HAL::HAL& hal;
 
@@ -28,24 +20,18 @@ extern const AP_HAL::HAL& hal;
 */
 void NavEKF2_core::FuseAirspeed()
 {
-    // start performance timer
-    hal.util->perf_begin(_perf_FuseAirspeed);
-
     // declarations
     float vn;
     float ve;
     float vd;
     float vwn;
     float vwe;
-    float EAS2TAS = _ahrs->get_EAS2TAS();
+    float EAS2TAS = dal.get_EAS2TAS();
     const float R_TAS = sq(constrain_float(frontend->_easNoise, 0.5f, 5.0f) * constrain_float(EAS2TAS, 0.9f, 10.0f));
     Vector3 SH_TAS;
     float SK_TAS;
     Vector24 H_TAS;
     float VtasPred;
-
-    // health is set bad until test passed
-    tasHealth = false;
 
     // copy required states to local variable names
     vn = stateStruct.velocity.x;
@@ -55,12 +41,12 @@ void NavEKF2_core::FuseAirspeed()
     vwe = stateStruct.wind_vel.y;
 
     // calculate the predicted airspeed
-    VtasPred = pythagorous3((ve - vwe) , (vn - vwn) , vd);
+    VtasPred = norm((ve - vwe) , (vn - vwn) , vd);
     // perform fusion of True Airspeed measurement
     if (VtasPred > 1.0f)
     {
         // calculate observation jacobians
-        SH_TAS[0] = 1/(sqrt(sq(ve - vwe) + sq(vn - vwn) + sq(vd)));
+        SH_TAS[0] = 1.0f/(sqrtf(sq(ve - vwe) + sq(vn - vwn) + sq(vd)));
         SH_TAS[1] = (SH_TAS[0]*(2*ve - 2*vwe))/2;
         SH_TAS[2] = (SH_TAS[0]*(2*vn - 2*vwn))/2;
         for (uint8_t i=0; i<=2; i++) H_TAS[i] = 0.0f;
@@ -124,7 +110,7 @@ void NavEKF2_core::FuseAirspeed()
         tasTestRatio = sq(innovVtas) / (sq(MAX(0.01f * (float)frontend->_tasInnovGate, 1.0f)) * varInnovVtas);
 
         // fail if the ratio is > 1, but don't fail if bad IMU data
-        tasHealth = ((tasTestRatio < 1.0f) || badIMUdata);
+        bool tasHealth = ((tasTestRatio < 1.0f) || badIMUdata);
         tasTimeout = (imuSampleTime_ms - lastTasPassTime_ms) > frontend->tasRetryTime_ms;
 
         // test the ratio before fusing data, forcing fusion if airspeed and position are timed out as we have no choice but to try and use airspeed to constrain error growth
@@ -134,7 +120,7 @@ void NavEKF2_core::FuseAirspeed()
             lastTasPassTime_ms = imuSampleTime_ms;
 
 
-            // zero the attitude error state - by definition it is assumed to be zero before each observaton fusion
+            // zero the attitude error state - by definition it is assumed to be zero before each observation fusion
             stateStruct.angErr.zero();
 
             // correct the state vector
@@ -182,12 +168,9 @@ void NavEKF2_core::FuseAirspeed()
         }
     }
 
-    // force the covariance matrix to me symmetrical and limit the variances to prevent ill-condiioning.
+    // force the covariance matrix to be symmetrical and limit the variances to prevent ill-conditioning.
     ForceSymmetry();
     ConstrainVariances();
-
-    // stop performance timer
-    hal.util->perf_end(_perf_FuseAirspeed);
 }
 
 // select fusion of true airspeed measurements
@@ -237,7 +220,7 @@ void NavEKF2_core::SelectBetaFusion()
     // set true when the fusion time interval has triggered
     bool f_timeTrigger = ((imuSampleTime_ms - prevBetaStep_ms) >= frontend->betaAvg_ms);
     // set true when use of synthetic sideslip fusion is necessary because we have limited sensor data or are dead reckoning position
-    bool f_required = !(use_compass() && useAirspeed() && ((imuSampleTime_ms - lastPosPassTime_ms) < frontend->gpsRetryTimeNoTAS_ms));
+    bool f_required = !(use_compass() && useAirspeed() && ((imuSampleTime_ms - lastPosPassTime_ms) < frontend->posRetryTimeNoVel_ms));
     // set true when sideslip fusion is feasible (requires zero sideslip assumption to be valid and use of wind states)
     bool f_feasible = (assume_zero_sideslip() && !inhibitWindStates);
     // use synthetic sideslip fusion if feasible, required and enough time has lapsed since the last fusion
@@ -248,15 +231,12 @@ void NavEKF2_core::SelectBetaFusion()
 }
 
 /*
- * Fuse sythetic sideslip measurement of zero using explicit algebraic equations generated with Matlab symbolic toolbox.
+ * Fuse synthetic sideslip measurement of zero using explicit algebraic equations generated with Matlab symbolic toolbox.
  * The script file used to generate these and other equations in this filter can be found here:
  * https://github.com/priseborough/InertialNav/blob/master/derivations/RotationVectorAttitudeParameterisation/GenerateNavFilterEquations.m
 */
 void NavEKF2_core::FuseSideslip()
 {
-    // start performance timer
-    hal.util->perf_begin(_perf_FuseSideslip);
-
     // declarations
     float q0;
     float q1;
@@ -382,7 +362,7 @@ void NavEKF2_core::FuseSideslip()
             return;
         }
 
-        // zero the attitude error state - by definition it is assumed to be zero before each observaton fusion
+        // zero the attitude error state - by definition it is assumed to be zero before each observation fusion
         stateStruct.angErr.zero();
 
         // correct the state vector
@@ -429,17 +409,12 @@ void NavEKF2_core::FuseSideslip()
         }
     }
 
-    // force the covariance matrix to me symmetrical and limit the variances to prevent ill-condiioning.
+    // force the covariance matrix to be symmetrical and limit the variances to prevent ill-conditioning.
     ForceSymmetry();
     ConstrainVariances();
-
-    // stop the performance timer
-    hal.util->perf_end(_perf_FuseSideslip);
 }
 
 /********************************************************
 *                   MISC FUNCTIONS                      *
 ********************************************************/
 
-
-#endif // HAL_CPU_CLASS

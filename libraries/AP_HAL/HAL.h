@@ -1,6 +1,6 @@
+#pragma once
 
-#ifndef __AP_HAL_HAL_H__
-#define __AP_HAL_HAL_H__
+class AP_Param;
 
 #include "AP_HAL_Namespace.h"
 
@@ -8,10 +8,14 @@
 #include "GPIO.h"
 #include "RCInput.h"
 #include "RCOutput.h"
-#include "SPIDriver.h"
+#include "SPIDevice.h"
 #include "Storage.h"
 #include "UARTDriver.h"
 #include "system.h"
+#include "OpticalFlow.h"
+#include "DSP.h"
+#include "CANIface.h"
+
 
 class AP_HAL::HAL {
 public:
@@ -20,9 +24,11 @@ public:
         AP_HAL::UARTDriver* _uartC, // telem1
         AP_HAL::UARTDriver* _uartD, // telem2
         AP_HAL::UARTDriver* _uartE, // 2nd GPS
-        AP_HAL::I2CDriver*  _i2c0,
-        AP_HAL::I2CDriver*  _i2c1,
-        AP_HAL::I2CDriver*  _i2c2,
+        AP_HAL::UARTDriver* _uartF, // extra1
+        AP_HAL::UARTDriver* _uartG, // extra2
+        AP_HAL::UARTDriver* _uartH, // extra3
+        AP_HAL::UARTDriver* _uartI, // extra4
+        AP_HAL::I2CDeviceManager* _i2c_mgr,
         AP_HAL::SPIDeviceManager* _spi,
         AP_HAL::AnalogIn*   _analogin,
         AP_HAL::Storage*    _storage,
@@ -31,16 +37,26 @@ public:
         AP_HAL::RCInput*    _rcin,
         AP_HAL::RCOutput*   _rcout,
         AP_HAL::Scheduler*  _scheduler,
-        AP_HAL::Util*       _util)
+        AP_HAL::Util*       _util,
+        AP_HAL::OpticalFlow*_opticalflow,
+        AP_HAL::Flash*      _flash,
+        AP_HAL::DSP*        _dsp,
+#if HAL_NUM_CAN_IFACES > 0
+        AP_HAL::CANIface* _can_ifaces[HAL_NUM_CAN_IFACES])
+#else
+        AP_HAL::CANIface** _can_ifaces)
+#endif
         :
         uartA(_uartA),
         uartB(_uartB),
         uartC(_uartC),
         uartD(_uartD),
         uartE(_uartE),
-        i2c(_i2c0),
-        i2c1(_i2c1),
-        i2c2(_i2c2),
+        uartF(_uartF),
+        uartG(_uartG),
+        uartH(_uartH),
+        uartI(_uartI),
+        i2c_mgr(_i2c_mgr),
         spi(_spi),
         analogin(_analogin),
         storage(_storage),
@@ -49,8 +65,21 @@ public:
         rcin(_rcin),
         rcout(_rcout),
         scheduler(_scheduler),
-        util(_util)
+        util(_util),
+        opticalflow(_opticalflow),
+        flash(_flash),
+        dsp(_dsp)
     {
+#if HAL_NUM_CAN_IFACES > 0
+        if (_can_ifaces == nullptr) {
+            for (uint8_t i = 0; i < HAL_NUM_CAN_IFACES; i++)
+                can[i] = nullptr;
+        } else {
+            for (uint8_t i = 0; i < HAL_NUM_CAN_IFACES; i++)
+                can[i] = _can_ifaces[i];
+        }
+#endif
+
         AP_HAL::init();
     }
 
@@ -72,14 +101,20 @@ public:
 
     virtual void run(int argc, char * const argv[], Callbacks* callbacks) const = 0;
 
+private:
+    // the uartX ports must be contiguous in ram for the serial() method to work
     AP_HAL::UARTDriver* uartA;
     AP_HAL::UARTDriver* uartB;
     AP_HAL::UARTDriver* uartC;
     AP_HAL::UARTDriver* uartD;
     AP_HAL::UARTDriver* uartE;
-    AP_HAL::I2CDriver*  i2c;
-    AP_HAL::I2CDriver*  i2c1;
-    AP_HAL::I2CDriver*  i2c2;
+    AP_HAL::UARTDriver* uartF;
+    AP_HAL::UARTDriver* uartG;
+    AP_HAL::UARTDriver* uartH;
+    AP_HAL::UARTDriver* uartI;
+
+public:
+    AP_HAL::I2CDeviceManager* i2c_mgr;
     AP_HAL::SPIDeviceManager* spi;
     AP_HAL::AnalogIn*   analogin;
     AP_HAL::Storage*    storage;
@@ -88,8 +123,18 @@ public:
     AP_HAL::RCInput*    rcin;
     AP_HAL::RCOutput*   rcout;
     AP_HAL::Scheduler*  scheduler;
-    AP_HAL::Util*       util;
+    AP_HAL::Util        *util;
+    AP_HAL::OpticalFlow *opticalflow;
+    AP_HAL::Flash       *flash;
+    AP_HAL::DSP         *dsp;
+#if HAL_NUM_CAN_IFACES > 0
+    AP_HAL::CANIface* can[HAL_NUM_CAN_IFACES];
+#else
+    AP_HAL::CANIface** can;
+#endif
+
+    // access to serial ports using SERIALn_ numbering
+    UARTDriver* serial(uint8_t sernum) const;
+
+    static constexpr uint8_t num_serial = 9;
 };
-
-#endif // __AP_HAL_HAL_H__
-

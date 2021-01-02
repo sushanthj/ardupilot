@@ -1,275 +1,302 @@
-// -*- tab-width: 4; Mode: C++; c-basic-offset: 4; indent-tabs-mode: nil -*-
+#pragma once
 
-#ifndef AP_MATH_H
-#define AP_MATH_H
-
-// Assorted useful math operations for ArduPilot(Mega)
+#include <cmath>
+#include <limits>
+#include <stdint.h>
+#include <type_traits>
 
 #include <AP_Common/AP_Common.h>
 #include <AP_Param/AP_Param.h>
-#include <math.h>
-#include <stdint.h>
+
+#include "definitions.h"
+#include "crc.h"
+#include "matrix3.h"
+#include "polygon.h"
+#include "quaternion.h"
 #include "rotations.h"
 #include "vector2.h"
 #include "vector3.h"
-#include "matrix3.h"
-#include "quaternion.h"
-#include "polygon.h"
-#include "edc.h"
-#include "float.h"
-#include <AP_Param/AP_Param.h>
-
-#ifndef M_PI_F
- #define M_PI_F 3.141592653589793f
-#endif
-#ifndef M_2PI_F
- #define M_2PI_F (2*M_PI_F)
-#endif
-#ifndef PI
- # define PI M_PI_F
-#endif
-#ifndef M_PI_2
- # define M_PI_2 1.570796326794897f
-#endif
-//Single precision conversions
-#define DEG_TO_RAD 0.017453292519943295769236907684886f
-#define RAD_TO_DEG 57.295779513082320876798154814105f
-
-//GPS Specific double precision conversions
-//The precision here does matter when using the wsg* functions for converting
-//between LLH and ECEF coordinates. Test code in examlpes/location/location.cpp
-#define DEG_TO_RAD_DOUBLE 0.0174532925199432954743716805978692718781530857086181640625  // equals to (M_PI / 180.0)
-#define RAD_TO_DEG_DOUBLE 57.29577951308232286464772187173366546630859375               // equals to (180.0 / M_PI)
-
-#define RadiansToCentiDegrees(x) ((x) * 5729.5779513082320876798154814105f)
-
-// acceleration due to gravity in m/s/s
-#define GRAVITY_MSS 9.80665f
-
-// radius of earth in meters
-#define RADIUS_OF_EARTH 6378100
-
-#define ROTATION_COMBINATION_SUPPORT 0
-
-// convert a longitude or latitude point to meters or centimeteres.
-// Note: this does not include the longitude scaling which is dependent upon location
-#define LATLON_TO_M  0.01113195f
-#define LATLON_TO_CM 1.113195f
-
-// Semi-major axis of the Earth, in meters.
-#define WGS84_A 6378137.0
-//Inverse flattening of the Earth
-#define WGS84_IF 298.257223563
-// The flattening of the Earth
-#define WGS84_F (1/WGS84_IF)
-// Semi-minor axis of the Earth in meters
-#define WGS84_B (WGS84_A*(1-WGS84_F))
-// Eccentricity of the Earth
-#define WGS84_E (sqrt(2*WGS84_F - WGS84_F*WGS84_F))
+#include "spline5.h"
+#include "location.h"
 
 // define AP_Param types AP_Vector3f and Ap_Matrix3f
-AP_PARAMDEFV(Matrix3f, Matrix3f, AP_PARAM_MATRIX3F);
 AP_PARAMDEFV(Vector3f, Vector3f, AP_PARAM_VECTOR3F);
 
-// are two floats equal
-static inline bool is_equal(const float fVal1, const float fVal2) { return fabsf(fVal1 - fVal2) < FLT_EPSILON ? true : false; }
+/*
+ * Check whether two floats are equal
+ */
+template <typename Arithmetic1, typename Arithmetic2>
+typename std::enable_if<std::is_integral<typename std::common_type<Arithmetic1, Arithmetic2>::type>::value ,bool>::type
+is_equal(const Arithmetic1 v_1, const Arithmetic2 v_2);
 
-// is a float is zero
-static inline bool is_zero(const float fVal1) { return fabsf(fVal1) < FLT_EPSILON ? true : false; }
+template <typename Arithmetic1, typename Arithmetic2>
+typename std::enable_if<std::is_floating_point<typename std::common_type<Arithmetic1, Arithmetic2>::type>::value, bool>::type
+is_equal(const Arithmetic1 v_1, const Arithmetic2 v_2);
 
-// a varient of asin() that always gives a valid answer.
-float           safe_asin(float v);
+/* 
+ * @brief: Check whether a float is zero
+ */
+template <typename T>
+inline bool is_zero(const T fVal1) {
+    static_assert(std::is_floating_point<T>::value || std::is_base_of<T,AP_Float>::value,
+                  "Template parameter not of type float");
+    return (fabsf(static_cast<float>(fVal1)) < FLT_EPSILON);
+}
 
-// a varient of sqrt() that always gives a valid answer.
-float           safe_sqrt(float v);
+/* 
+ * @brief: Check whether a float is greater than zero
+ */
+template <typename T>
+inline bool is_positive(const T fVal1) {
+    static_assert(std::is_floating_point<T>::value || std::is_base_of<T,AP_Float>::value,
+                  "Template parameter not of type float");
+    return (static_cast<float>(fVal1) >= FLT_EPSILON);
+}
 
-#if ROTATION_COMBINATION_SUPPORT
-// find a rotation that is the combination of two other
-// rotations. This is used to allow us to add an overall board
-// rotation to an existing rotation of a sensor such as the compass
-enum Rotation           rotation_combination(enum Rotation r1, enum Rotation r2, bool *found = NULL);
-#endif
 
-// longitude_scale - returns the scaler to compensate for shrinking longitude as you move north or south from the equator
-// Note: this does not include the scaling to convert longitude/latitude points to meters or centimeters
-float                   longitude_scale(const struct Location &loc);
+/* 
+ * @brief: Check whether a float is less than zero
+ */
+template <typename T>
+inline bool is_negative(const T fVal1) {
+    static_assert(std::is_floating_point<T>::value || std::is_base_of<T,AP_Float>::value,
+                  "Template parameter not of type float");
+    return (static_cast<float>(fVal1) <= (-1.0 * FLT_EPSILON));
+}
 
-// return distance in meters between two locations
-float                   get_distance(const struct Location &loc1, const struct Location &loc2);
 
-// return distance in centimeters between two locations
-uint32_t                get_distance_cm(const struct Location &loc1, const struct Location &loc2);
+/*
+ * A variant of asin() that checks the input ranges and ensures a valid angle
+ * as output. If nan is given as input then zero is returned.
+ */
+template <typename T>
+float safe_asin(const T v);
 
-// return bearing in centi-degrees between two locations
-int32_t                 get_bearing_cd(const struct Location &loc1, const struct Location &loc2);
-
-// return determinant of square matrix
-float                   detnxn(const float C[], const uint8_t n);
-
-// Output inverted nxn matrix when returns true, otherwise matrix is Singular
-bool                    inversenxn(const float x[], float y[], const uint8_t n);
+/*
+ * A variant of sqrt() that checks the input ranges and ensures a valid value
+ * as output. If a negative number is given then 0 is returned.  The reasoning
+ * is that a negative number for sqrt() in our code is usually caused by small
+ * numerical rounding errors, so the real input should have been zero
+ */
+template <typename T>
+float safe_sqrt(const T v);
 
 // invOut is an inverted 4x4 matrix when returns true, otherwise matrix is Singular
-bool                    inverse3x3(float m[], float invOut[]);
+bool inverse3x3(float m[], float invOut[]) WARN_IF_UNUSED;
 
 // invOut is an inverted 3x3 matrix when returns true, otherwise matrix is Singular
-bool                    inverse4x4(float m[],float invOut[]);
+bool inverse4x4(float m[],float invOut[]) WARN_IF_UNUSED;
 
-// see if location is past a line perpendicular to
-// the line between point1 and point2. If point1 is
-// our previous waypoint and point2 is our target waypoint
-// then this function returns true if we have flown past
-// the target waypoint
-bool        location_passed_point(const struct Location & location,
-                                  const struct Location & point1,
-                                  const struct Location & point2);
+// matrix multiplication of two NxN matrices
+float *mat_mul(float *A, float *B, uint8_t n);
+
+// matrix algebra
+bool inverse(float x[], float y[], uint16_t dim) WARN_IF_UNUSED;
 
 /*
-  return the proportion we are along the path from point1 to
-  point2. This will be less than >1 if we have passed point2
+ * Constrain an angle to be within the range: -180 to 180 degrees. The second
+ * parameter changes the units. Default: 1 == degrees, 10 == dezi,
+ * 100 == centi.
  */
-float location_path_proportion(const struct Location &location,
-                               const struct Location &point1,
-                               const struct Location &point2);
-
-//  extrapolate latitude/longitude given bearing and distance
-void        location_update(struct Location &loc, float bearing, float distance);
-
-// extrapolate latitude/longitude given distances north and east
-void        location_offset(struct Location &loc, float ofs_north, float ofs_east);
+template <typename T>
+T wrap_180(const T angle);
 
 /*
-  return the distance in meters in North/East plane as a N/E vector
-  from loc1 to loc2
+ * Wrap an angle in centi-degrees. See wrap_180().
  */
-Vector2f location_diff(const struct Location &loc1, const struct Location &loc2);
+template <typename T>
+T wrap_180_cd(const T angle);
 
 /*
-  wrap an angle in centi-degrees
+ * Constrain an euler angle to be within the range: 0 to 360 degrees. The
+ * second parameter changes the units. Default: 1 == degrees, 10 == dezi,
+ * 100 == centi.
  */
-int32_t wrap_360_cd(int32_t error);
-int32_t wrap_180_cd(int32_t error);
-float wrap_360_cd_float(float angle);
-float wrap_180_cd_float(float angle);
+float wrap_360(const float angle);
+#ifdef ALLOW_DOUBLE_MATH_FUNCTIONS
+double wrap_360(const double angle);
+#endif
+int wrap_360(const int angle);
+
+int wrap_360_cd(const int angle);
+long wrap_360_cd(const long angle);
+float wrap_360_cd(const float angle);
+#ifdef ALLOW_DOUBLE_MATH_FUNCTIONS
+double wrap_360_cd(const double angle);
+#endif
+
 
 /*
-  wrap an angle defined in radians to -PI ~ PI (equivalent to +- 180 degrees)
+  wrap an angle in radians to -PI ~ PI (equivalent to +- 180 degrees)
  */
-float wrap_PI(float angle_in_radians);
+template <typename T>
+float wrap_PI(const T radian);
 
 /*
-  wrap an angle defined in radians to the interval [0,2*PI)
+ * wrap an angle in radians to 0..2PI
  */
-float wrap_2PI(float angle);
+template <typename T>
+float wrap_2PI(const T radian);
 
 /*
- * check if lat and lng match. Ignore altitude and options
+ * Constrain a value to be within the range: low and high
  */
-bool locations_are_same(const struct Location &loc1, const struct Location &loc2);
+template <typename T>
+T constrain_value(const T amt, const T low, const T high);
 
-/*
-  print a int32_t lat/long in decimal degrees
- */
-void print_latlon(AP_HAL::BetterStream *s, int32_t lat_or_lon);
+template <typename T>
+T constrain_value_line(const T amt, const T low, const T high, uint32_t line);
 
-// Converts from WGS84 geodetic coordinates (lat, lon, height)
-// into WGS84 Earth Centered, Earth Fixed (ECEF) coordinates
-// (X, Y, Z)
-void wgsllh2ecef(const Vector3d &llh, Vector3d &ecef);
+#if BOARD_FLASH_SIZE > 1024
+  #define constrain_float(amt, low, high) constrain_value_line(float(amt), float(low), float(high), uint32_t(__LINE__))
+#else
+  #define constrain_float(amt, low, high) constrain_value(float(amt), float(low), float(high))
+#endif
 
-// Converts from WGS84 Earth Centered, Earth Fixed (ECEF)
-// coordinates (X, Y, Z), into WHS84 geodetic
-// coordinates (lat, lon, height)
-void wgsecef2llh(const Vector3d &ecef, Vector3d &llh);
-
-// constrain a value
-// constrain a value
-static inline float constrain_float(float amt, float low, float high)
+inline int16_t constrain_int16(const int16_t amt, const int16_t low, const int16_t high)
 {
-	// the check for NaN as a float prevents propogation of
-	// floating point errors through any function that uses
-	// constrain_float(). The normal float semantics already handle -Inf
-	// and +Inf
-	if (isnan(amt)) {
-		return (low+high)*0.5f;
-	}
-	return ((amt)<(low)?(low):((amt)>(high)?(high):(amt)));
-}
-// constrain a int16_t value
-static inline int16_t constrain_int16(int16_t amt, int16_t low, int16_t high) {
-	return ((amt)<(low)?(low):((amt)>(high)?(high):(amt)));
+    return constrain_value(amt, low, high);
 }
 
-// constrain a int32_t value
-static inline int32_t constrain_int32(int32_t amt, int32_t low, int32_t high) {
-	return ((amt)<(low)?(low):((amt)>(high)?(high):(amt)));
+inline int32_t constrain_int32(const int32_t amt, const int32_t low, const int32_t high)
+{
+    return constrain_value(amt, low, high);
 }
 
-//matrix algebra
-bool inverse(float x[], float y[], uint16_t dim);
+inline int64_t constrain_int64(const int64_t amt, const int64_t low, const int64_t high)
+{
+    return constrain_value(amt, low, high);
+}
 
 // degrees -> radians
-static inline float radians(float deg) {
-	return deg * DEG_TO_RAD;
+static inline constexpr float radians(float deg)
+{
+    return deg * DEG_TO_RAD;
 }
 
 // radians -> degrees
-static inline float degrees(float rad) {
-	return rad * RAD_TO_DEG;
+static inline constexpr float degrees(float rad)
+{
+    return rad * RAD_TO_DEG;
 }
 
-// square
-static inline float sq(float v) {
-	return v*v;
+template<typename T>
+float sq(const T val)
+{
+    float v = static_cast<float>(val);
+    return v*v;
 }
 
-// 2D vector length
-static inline float pythagorous2(float a, float b) {
-	return sqrtf(sq(a)+sq(b));
+/*
+ * Variadic template for calculating the square norm of a vector of any
+ * dimension.
+ */
+template<typename T, typename... Params>
+float sq(const T first, const Params... parameters)
+{
+    return sq(first) + sq(parameters...);
 }
 
-// 3D vector length
-static inline float pythagorous3(float a, float b, float c) {
-	return sqrtf(sq(a)+sq(b)+sq(c));
+/*
+ * Variadic template for calculating the norm (pythagoras) of a vector of any
+ * dimension.
+ */
+template<typename T, typename U, typename... Params>
+float norm(const T first, const U second, const Params... parameters)
+{
+    return sqrtf(sq(first, second, parameters...));
 }
-
-#ifdef radians
-#error "Build is including Arduino base headers"
-#endif
 
 template<typename A, typename B>
-static inline auto MIN(const A &one, const B &two) -> decltype(one < two ? one : two) {
+static inline auto MIN(const A &one, const B &two) -> decltype(one < two ? one : two)
+{
     return one < two ? one : two;
 }
 
 template<typename A, typename B>
-static inline auto MAX(const A &one, const B &two) -> decltype(one > two ? one : two) {
+static inline auto MAX(const A &one, const B &two) -> decltype(one > two ? one : two)
+{
     return one > two ? one : two;
 }
 
-#define NSEC_PER_SEC 1000000000ULL
-#define NSEC_PER_USEC 1000ULL
-
-inline uint32_t hz_to_nsec(uint32_t freq)
+inline constexpr uint32_t hz_to_nsec(uint32_t freq)
 {
-    return NSEC_PER_SEC / freq;
+    return AP_NSEC_PER_SEC / freq;
 }
 
-inline uint32_t nsec_to_hz(uint32_t usec)
+inline constexpr uint32_t nsec_to_hz(uint32_t nsec)
 {
-    return NSEC_PER_SEC / usec;
+    return AP_NSEC_PER_SEC / nsec;
 }
 
-inline uint32_t usec_to_nsec(uint32_t usec)
+inline constexpr uint32_t usec_to_nsec(uint32_t usec)
 {
-    return usec * NSEC_PER_USEC;
+    return usec * AP_NSEC_PER_USEC;
 }
 
-inline uint32_t nsec_to_usec(uint32_t nsec)
+inline constexpr uint32_t nsec_to_usec(uint32_t nsec)
 {
-    return nsec / NSEC_PER_USEC;
+    return nsec / AP_NSEC_PER_USEC;
 }
 
-#undef INLINE
-#endif // AP_MATH_H
+inline constexpr uint32_t hz_to_usec(uint32_t freq)
+{
+    return AP_USEC_PER_SEC / freq;
+}
+
+inline constexpr uint32_t usec_to_hz(uint32_t usec)
+{
+    return AP_USEC_PER_SEC / usec;
+}
+
+/*
+  linear interpolation based on a variable in a range
+ */
+float linear_interpolate(float low_output, float high_output,
+                         float var_value,
+                         float var_low, float var_high);
+
+/* cubic "expo" curve generator 
+ * alpha range: [0,1] min to max expo
+ * input range: [-1,1]
+ */
+constexpr float expo_curve(float alpha, float input);
+
+/* throttle curve generator
+ * thr_mid: output at mid stick
+ * alpha: expo coefficient
+ * thr_in: [0-1]
+ */
+float throttle_curve(float thr_mid, float alpha, float thr_in);
+
+/* simple 16 bit random number generator */
+uint16_t get_random16(void);
+
+// generate a random float between -1 and 1, for use in SITL
+float rand_float(void);
+
+// generate a random Vector3f of size 1
+Vector3f rand_vec3f(void);
+
+// return true if two rotations are equal
+bool rotation_equal(enum Rotation r1, enum Rotation r2) WARN_IF_UNUSED;
+
+/*
+ * return a velocity correction (in m/s in NED) for a sensor's position given it's position offsets
+ * this correction should be added to the sensor NED measurement
+ * sensor_offset_bf is in meters in body frame (Foward, Right, Down)
+ * rot_ef_to_bf is a rotation matrix to rotate from earth-frame (NED) to body frame
+ * angular_rate is rad/sec
+ */
+Vector3f get_vel_correction_for_sensor_offset(const Vector3f &sensor_offset_bf, const Matrix3f &rot_ef_to_bf, const Vector3f &angular_rate);
+
+/*
+  calculate a low pass filter alpha value
+ */
+float calc_lowpass_alpha_dt(float dt, float cutoff_freq);
+
+#if CONFIG_HAL_BOARD == HAL_BOARD_SITL
+// fill an array of float with NaN, used to invalidate memory in SITL
+void fill_nanf(float *f, uint16_t count);
+#endif
 

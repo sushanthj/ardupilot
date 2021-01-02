@@ -1,4 +1,3 @@
-// -*- tab-width: 4; Mode: C++; c-basic-offset: 4; indent-tabs-mode: nil -*-
 /*
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -19,20 +18,17 @@
 ///				libraries.
 ///
 
-#ifndef __AP_COMMON_H__
-#define __AP_COMMON_H__
+#pragma once
 
 #include <stdint.h>
 #include <stdlib.h>
-#include <stdbool.h>
-
-#pragma GCC diagnostic warning "-Wall"
-#pragma GCC diagnostic warning "-Wextra"
-#pragma GCC diagnostic warning "-Wlogical-op"
-#pragma GCC diagnostic ignored "-Wredundant-decls"
+#include <type_traits>
 
 // used to pack structures
 #define PACKED __attribute__((__packed__))
+
+// used to weaken symbols
+#define WEAK __attribute__((__weak__))
 
 // used to mark a function that may be unused in some builds
 #define UNUSED_FUNCTION __attribute__((unused))
@@ -43,13 +39,39 @@
 // sometimes we need to prevent inlining to prevent large stack usage
 #define NOINLINE __attribute__((noinline))
 
+// used to ignore results for functions marked as warn unused
+#define IGNORE_RETURN(x) do {if (x) {}} while(0)
+
 #define FMT_PRINTF(a,b) __attribute__((format(printf, a, b)))
 #define FMT_SCANF(a,b) __attribute__((format(scanf, a, b)))
+
+#ifdef __has_cpp_attribute
+#  if __has_cpp_attribute(fallthrough)
+#    define FALLTHROUGH [[fallthrough]]
+#  elif __has_cpp_attribute(gnu::fallthrough)
+#    define FALLTHROUGH [[gnu::fallthrough]]
+#  endif
+#endif
+#ifndef FALLTHROUGH
+#  define FALLTHROUGH
+#endif
+
+#ifdef __GNUC__
+ #define WARN_IF_UNUSED __attribute__ ((warn_unused_result))
+#else
+ #define WARN_IF_UNUSED
+#endif
+
+#define NORETURN __attribute__ ((noreturn))
 
 #define ToRad(x) radians(x)	// *pi/180
 #define ToDeg(x) degrees(x)	// *180/pi
 
-#define LOCATION_ALT_MAX_M  83000   // maximum altitude (in meters) that can be fit into Location structure's alt field
+/* Declare and implement const and non-const versions of the array subscript
+ * operator. The object is treated as an array of type_ values. */
+#define DEFINE_BYTE_ARRAY_METHODS                                                                   \
+    inline uint8_t &operator[](size_t i) { return reinterpret_cast<uint8_t *>(this)[i]; }           \
+    inline uint8_t operator[](size_t i) const { return reinterpret_cast<const uint8_t *>(this)[i]; }
 
 /*
   check if bit bitnumber is set in value, returned as a
@@ -61,63 +83,48 @@
 #define LOWBYTE(i) ((uint8_t)(i))
 #define HIGHBYTE(i) ((uint8_t)(((uint16_t)(i))>>8))
 
-template <typename T, size_t N>
-char (&_ARRAY_SIZE_HELPER(T (&_arr)[N]))[N];
+#define ARRAY_SIZE(_arr) (sizeof(_arr) / sizeof(_arr[0]))
 
-template <typename T>
-char (&_ARRAY_SIZE_HELPER(T (&_arr)[0]))[0];
+#define UINT16_VALUE(hbyte, lbyte) (static_cast<uint16_t>(((hbyte)<<8)|(lbyte)))
+#define UINT32_VALUE(b3, b2, b1, b0) (static_cast<uint32_t>(((b3)<<23)|((b2)<<16)|((b1)<<8)|(b0)))
 
-#define ARRAY_SIZE(_arr) sizeof(_ARRAY_SIZE_HELPER(_arr))
+/*
+ * See UNUSED_RESULT. The difference is that it receives @uniq_ as the name to
+ * be used for its internal variable.
+ *
+ * @uniq_: a unique name to use for variable name
+ * @expr_: the expression to be evaluated
+ */
+#define _UNUSED_RESULT(uniq_, expr_)                      \
+    do {                                                  \
+        decltype(expr_) uniq_ __attribute__((unused));    \
+        uniq_ = expr_;                                    \
+    } while (0)
+
+/*
+ * Allow to call a function annotated with warn_unused_result attribute
+ * without getting a warning, because sometimes this is what we want to do.
+ *
+ * @expr_: the expression to be evaluated
+ */
+#define UNUSED_RESULT(expr_) _UNUSED_RESULT(__unique_name_##__COUNTER__, expr_)
 
 // @}
 
 
-////////////////////////////////////////////////////////////////////////////////
-/// @name	Types
-///
-/// Data structures and types used throughout the libraries and applications. 0 = default
-/// bit 0: Altitude is stored               0: Absolute,	1: Relative
-/// bit 1: Chnage Alt between WP            0: Gradually,	1: ASAP
-/// bit 2: Direction of loiter command      0: Clockwise	1: Counter-Clockwise
-/// bit 3: Req.to hit WP.alt to continue    0: No,          1: Yes
-/// bit 4: Relative to Home					0: No,          1: Yes
-/// bit 5:
-/// bit 6:
-/// bit 7: Move to next Command             0: YES,         1: Loiter until commanded
-
-//@{
-
-struct PACKED Location_Option_Flags {
-    uint8_t relative_alt : 1;           // 1 if altitude is relateive to home
-    uint8_t unused1      : 1;           // unused flag (defined so that loiter_ccw uses the correct bit)
-    uint8_t loiter_ccw   : 1;           // 0 if clockwise, 1 if counter clockwise
-    uint8_t terrain_alt  : 1;           // this altitude is above terrain
+// assert_storage_size template: assert that the memory used to store an
+// item is of a specific size.
+// example invocation:
+// assert_storage_size<class Location, 16> _assert_storage_size_Location;
+// templates are used for this because the compiler's output will
+// usually contain details of the template instantiation so you can
+// see how the actual size differs from the expected size.
+template<typename s, size_t s_size, size_t t> struct _assert_storage_size {
+    static_assert(s_size == t, "wrong size");
 };
-
-struct PACKED Location {
-    union {
-        Location_Option_Flags flags;                    ///< options bitmask (1<<0 = relative altitude)
-        uint8_t options;                                /// allows writing all flags to eeprom as one byte
-    };
-    // by making alt 24 bit we can make p1 in a command 16 bit,
-    // allowing an accurate angle in centi-degrees. This keeps the
-    // storage cost per mission item at 15 bytes, and allows mission
-    // altitudes of up to +/- 83km
-    int32_t alt:24;                                     ///< param 2 - Altitude in centimeters (meters * 100)
-    int32_t lat;                                        ///< param 3 - Lattitude * 10**7
-    int32_t lng;                                        ///< param 4 - Longitude * 10**7
+template<typename s, size_t t> struct assert_storage_size {
+    _assert_storage_size<s, sizeof(s), t> _member;
 };
-
-/*
-  home states. Used to record if user has overridden home position.
-*/
-enum HomeState {
-    HOME_UNSET,                 // home is unset, no GPS positions yet received
-    HOME_SET_NOT_LOCKED,        // home is set to EKF origin or armed location (can be moved)
-    HOME_SET_AND_LOCKED         // home has been set by user, cannot be moved except by user initiated do-set-home command
-};
-
-//@}
 
 ////////////////////////////////////////////////////////////////////////////////
 /// @name	Conversions
@@ -126,24 +133,29 @@ enum HomeState {
 ///
 //@{
 
-
-/*  Product IDs for all supported products follow */
-
-#define AP_PRODUCT_ID_NONE                      0x00    // Hardware in the loop
-#define AP_PRODUCT_ID_SITL              0x03    // Software in the loop
-#define AP_PRODUCT_ID_PX4               0x04    // PX4 on NuttX
-#define AP_PRODUCT_ID_PX4_V2            0x05    // PX4 FMU2 on NuttX
-#define AP_PRODUCT_ID_PX4_V4            0x06    // PX4 FMU4 on NuttX
-#define AP_PRODUCT_ID_FLYMAPLE          0x100   // Flymaple with ITG3205, ADXL345, HMC5883, BMP085
-#define AP_PRODUCT_ID_L3G4200D          0x101   // Linux with L3G4200D and ADXL345
-#define AP_PRODUCT_ID_PIXHAWK_FIRE_CAPE 0x102   // Linux with the PixHawk Fire Cape
-#define AP_PRODUCT_ID_MPU9250           0x103   // MPU9250
-#define AP_PRODUCT_ID_VRBRAIN           0x150   // VRBRAIN on NuttX
-
 /*
   Return true if value is between lower and upper bound inclusive.
   False otherwise.
 */
 bool is_bounded_int32(int32_t value, int32_t lower_bound, int32_t upper_bound);
 
-#endif // _AP_COMMON_H
+bool hex_to_uint8(uint8_t a, uint8_t &res);  // return the uint8 value of an ascii hex character
+
+/*
+  strncpy without the warning for not leaving room for nul termination
+ */
+void strncpy_noterm(char *dest, const char *src, size_t n);
+
+/*
+  Bit manipulation
+ */
+//#define BIT_SET(value, bitnumber) ((value) |= (((typeof(value))1U) << (bitnumber)))
+template <typename T> void BIT_SET (T& value, uint8_t bitnumber) noexcept {
+     static_assert(std::is_integral<T>::value, "Integral required.");
+     ((value) |= ((T)(1U) << (bitnumber)));
+ }
+//#define BIT_CLEAR(value, bitnumber) ((value) &= ~(((typeof(value))1U) << (bitnumber)))
+template <typename T> void BIT_CLEAR (T& value, uint8_t bitnumber) noexcept {
+     static_assert(std::is_integral<T>::value, "Integral required.");
+     ((value) &= ~((T)(1U) << (bitnumber)));
+ }

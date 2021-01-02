@@ -1,20 +1,21 @@
 #pragma once
 
-#include <AP_HAL/AP_HAL.h>
-
-#if CONFIG_HAL_BOARD == HAL_BOARD_LINUX
-
 #include "AP_HAL_Linux.h"
+#include <AP_HAL/AP_HAL.h>
+#include <AP_HAL/utility/RingBuffer.h>
+
 #include "GPIO.h"
 
-class Linux::DigitalSource_Sysfs : public AP_HAL::DigitalSource {
-    friend class Linux::GPIO_Sysfs;
+namespace Linux {
+
+class DigitalSource_Sysfs : public AP_HAL::DigitalSource {
+    friend class GPIO_Sysfs;
 public:
     ~DigitalSource_Sysfs();
-    uint8_t read();
-    void write(uint8_t value);
-    void mode(uint8_t output);
-    void toggle();
+    uint8_t read() override;
+    void write(uint8_t value) override;
+    void mode(uint8_t output) override;
+    void toggle() override;
 private:
     /* Only GPIO_Sysfs will be able to instantiate */
     DigitalSource_Sysfs(unsigned pin, int value_fd);
@@ -25,8 +26,8 @@ private:
 /**
  * Generic implementation of AP_HAL::GPIO for Linux based boards.
  */
-class Linux::GPIO_Sysfs : public AP_HAL::GPIO {
-    friend class Linux::DigitalSource_Sysfs;
+class GPIO_Sysfs : public AP_HAL::GPIO {
+    friend class DigitalSource_Sysfs;
 public:
     /* Fill this table with the real pin numbers. */
     static const unsigned pin_table[];
@@ -36,7 +37,7 @@ public:
         return static_cast<GPIO_Sysfs*>(gpio);
     }
 
-    void init();
+    void init() override;
 
     void pinMode(uint8_t vpin, uint8_t output) override;
     uint8_t read(uint8_t vpin) override;
@@ -50,19 +51,13 @@ public:
     AP_HAL::DigitalSource *channel(uint16_t vpin) override;
 
     /*
-     * Currently this function always returns -1.
-     */
-    int8_t analogPinToDigitalPin(uint8_t vpin) override;
-
-    /*
-     * Currently this function always returns false.
-     */
-    bool attach_interrupt(uint8_t interrupt_num, AP_HAL::Proc p, uint8_t mode) override;
-
-    /*
      * Currently this function always returns false.
      */
     bool usb_connected() override;
+
+protected:
+    void _pinMode(unsigned int pin, uint8_t output);
+    int _open_pin_value(unsigned int pin, int flags);
 
     /*
      * Make pin available for use. This function should be called before
@@ -72,22 +67,32 @@ public:
      *
      * Note: the pin is ignored if already exported.
      */
-    static bool export_pin(uint8_t vpin);
+    static bool _export_pin(uint8_t vpin);
+
+#ifdef HAL_GPIO_SCRIPT
+    /*
+      support for calling external scripts based on GPIO writes
+     */
+    void _gpio_script_write(uint8_t vpin, uint8_t value);
 
     /*
-     * Make pins available for use. This function should be called before
-     * calling functions that use pin number as parameter.
-     *
-     * If all pins are exported successfully, true is returned. If there is an
-     * error for one of them, false is returned.
-     *
-     * Note: pins already exported are ignored.
+      thread to run scripts
      */
-    static bool export_pins(uint8_t vpins[], size_t num_vpins);
+    void _gpio_script_thread(void);
 
-protected:
-    void _pinMode(unsigned int pin, uint8_t output);
-    int _open_pin_value(unsigned int pin, int flags);
+    /*
+      control structures for _gpio_script_write
+     */
+    typedef struct {
+        uint8_t pin;
+        uint8_t value;
+    } pin_value_t;
+
+    struct {
+        bool thread_created;
+        ObjectBuffer<pin_value_t> pending{10};
+    } _script;
+#endif // HAL_GPIO_SCRIPT
 };
 
-#endif
+}

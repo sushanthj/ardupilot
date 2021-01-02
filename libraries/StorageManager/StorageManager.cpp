@@ -1,6 +1,5 @@
-/// -*- tab-width: 4; Mode: C++; c-basic-offset: 4; indent-tabs-mode: nil -*-
 /*
-   Please contribute your ideas! See http://dev.ardupilot.com for details
+   Please contribute your ideas! See https://dev.ardupilot.org for details
 
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -19,10 +18,14 @@
   Management for hal.storage to allow for backwards compatible mapping
   of storage offsets to available storage
  */
-#include "StorageManager.h"
 
 #include <AP_HAL/AP_HAL.h>
-#include <AP_Progmem/AP_Progmem.h>
+#include <AP_Vehicle/AP_Vehicle_Type.h>
+
+#include "StorageManager.h"
+
+#include <stdio.h>
+
 
 extern const AP_HAL::HAL& hal;
 
@@ -31,12 +34,22 @@ extern const AP_HAL::HAL& hal;
   compatibility with older firmwares
  */
 
+#if STORAGE_NUM_AREAS == 1
+/*
+  layout for peripherals
+ */
+const StorageManager::StorageArea StorageManager::layout[STORAGE_NUM_AREAS] = {
+    { StorageParam,   0,     HAL_STORAGE_SIZE}
+};
+
+#elif !APM_BUILD_TYPE(APM_BUILD_ArduCopter)
+
 /*
   layout for fixed wing and rovers
   On PX4v1 this gives 309 waypoints, 30 rally points and 52 fence points
   On Pixhawk this gives 724 waypoints, 50 rally points and 84 fence points
  */
-const StorageManager::StorageArea StorageManager::layout_default[STORAGE_NUM_AREAS] = {
+const StorageManager::StorageArea StorageManager::layout[STORAGE_NUM_AREAS] = {
     { StorageParam,   0,     1280}, // 0x500 parameter bytes
     { StorageMission, 1280,  2506},
     { StorageRally,   3786,   150}, // 10 rally points
@@ -45,24 +58,31 @@ const StorageManager::StorageArea StorageManager::layout_default[STORAGE_NUM_ARE
     { StorageParam,   4096,  1280},
     { StorageRally,   5376,   300},
     { StorageFence,   5676,   256},
-    { StorageMission, 5932,  2132}, // leave 4 byte gap for PX4
-                                    // sentinal and expansion
+    { StorageMission, 5932,  2132}, 
+    { StorageKeys,    8064,    64}, 
+    { StorageBindInfo,8128,    56}, 
+#endif
+#if STORAGE_NUM_AREAS == 11
+    // optimised for lots of parameters for 15k boards with OSD
+    { StorageParam,    8192,  7168},
 #endif
 #if STORAGE_NUM_AREAS >= 12
     { StorageParam,    8192,  1280},
     { StorageRally,    9472,   300},
     { StorageFence,    9772,   256},
-    { StorageMission, 10028,  6228}, // leave 128 byte gap for expansion
+    { StorageMission,  10028,  5204}, // leave 128 byte gap for expansion
+    { StorageCANDNA,   15232,  1024},
 #endif
 };
 
+#else
 
 /*
   layout for copter.
   On PX4v1 this gives 303 waypoints, 26 rally points and 38 fence points
   On Pixhawk this gives 718 waypoints, 46 rally points and 70 fence points
  */
-const StorageManager::StorageArea StorageManager::layout_copter[STORAGE_NUM_AREAS] = {
+const StorageManager::StorageArea StorageManager::layout[STORAGE_NUM_AREAS] = {
     { StorageParam,   0,     1536}, // 0x600 param bytes
     { StorageMission, 1536,  2422},
     { StorageRally,   3958,    90}, // 6 rally points
@@ -71,40 +91,32 @@ const StorageManager::StorageArea StorageManager::layout_copter[STORAGE_NUM_AREA
     { StorageParam,   4096,  1280},
     { StorageRally,   5376,   300},
     { StorageFence,   5676,   256},
-    { StorageMission, 5932,  2132}, // leave 128 byte gap for
-                                    // expansion and PX4 sentinal
+    { StorageMission, 5932,  2132},
+    { StorageKeys,    8064,    64}, 
+    { StorageBindInfo,8128,    56},
+#endif
+#if STORAGE_NUM_AREAS == 11
+    // optimised for lots of parameters for 15k boards with OSD
+    { StorageParam,    8192,  7168},
 #endif
 #if STORAGE_NUM_AREAS >= 12
     { StorageParam,    8192,  1280},
     { StorageRally,    9472,   300},
     { StorageFence,    9772,   256},
-    { StorageMission, 10028,  6228}, // leave 128 byte gap for expansion
+    { StorageMission,  10028,  5204}, // leave 128 byte gap for expansion
+    { StorageCANDNA,   15232,  1024},
 #endif
 };
-
-// setup default layout
-const StorageManager::StorageArea *StorageManager::layout = layout_default;
+#endif // STORAGE_NUM_AREAS == 1
 
 /*
   erase all storage
  */
 void StorageManager::erase(void)
 {
-    uint8_t blk[16];
-    memset(blk, 0, sizeof(blk));
-    for (uint8_t i=0; i<STORAGE_NUM_AREAS; i++) {
-        const StorageManager::StorageArea &area = StorageManager::layout[i];
-        uint16_t length = pgm_read_word(&area.length);
-        uint16_t offset = pgm_read_word(&area.offset);
-        for (uint16_t ofs=0; ofs<length; ofs += sizeof(blk)) {
-            uint8_t n = 16;
-            if (ofs + n > length) {
-                n = length - ofs;
-            }
-            hal.storage->write_block(offset + ofs, blk, n);
-        }
+    if (!hal.storage->erase()) {
+        ::printf("StorageManager: erase failed\n");
     }
-    
 }
 
 /*
@@ -117,8 +129,8 @@ StorageAccess::StorageAccess(StorageManager::StorageType _type) :
     total_size = 0;
     for (uint8_t i=0; i<STORAGE_NUM_AREAS; i++) {
         const StorageManager::StorageArea &area = StorageManager::layout[i];
-        if (pgm_read_byte(&area.type) == type) {
-            total_size += pgm_read_word(&area.length);
+        if (area.type == type) {
+            total_size += area.length;
         }
     }
 }
@@ -132,9 +144,9 @@ bool StorageAccess::read_block(void *data, uint16_t addr, size_t n) const
     uint8_t *b = (uint8_t *)data;
     for (uint8_t i=0; i<STORAGE_NUM_AREAS; i++) {
         const StorageManager::StorageArea &area = StorageManager::layout[i];
-        uint16_t length = pgm_read_word(&area.length);
-        uint16_t offset = pgm_read_word(&area.offset);
-        if (pgm_read_byte(&area.type) != type) {
+        uint16_t length = area.length;
+        uint16_t offset = area.offset;
+        if (area.type != type) {
             continue;
         }
         if (addr >= length) {
@@ -172,9 +184,9 @@ bool StorageAccess::write_block(uint16_t addr, const void *data, size_t n) const
     const uint8_t *b = (const uint8_t *)data;
     for (uint8_t i=0; i<STORAGE_NUM_AREAS; i++) {
         const StorageManager::StorageArea &area = StorageManager::layout[i];
-        uint16_t length = pgm_read_word(&area.length);
-        uint16_t offset = pgm_read_word(&area.offset);
-        if (pgm_read_byte(&area.type) != type) {
+        uint16_t length = area.length;
+        uint16_t offset = area.offset;
+        if (area.type != type) {
             continue;
         }
         if (addr >= length) {

@@ -1,45 +1,59 @@
-// -*- tab-width: 4; Mode: C++; c-basic-offset: 4; indent-tabs-mode: nil -*-
-
 //
 // Simple test for the AP_AHRS interface
 //
 
-#include <AP_ADC/AP_ADC.h>
 #include <AP_AHRS/AP_AHRS.h>
 #include <AP_HAL/AP_HAL.h>
+#include <AP_BoardConfig/AP_BoardConfig.h>
+#include <GCS_MAVLink/GCS_Dummy.h>
+#include <AP_RangeFinder/AP_RangeFinder.h>
+#include <AP_Logger/AP_Logger.h>
+#include <AP_GPS/AP_GPS.h>
+#include <AP_Baro/AP_Baro.h>
+
+void setup();
+void loop();
 
 const AP_HAL::HAL& hal = AP_HAL::get_HAL();
 
-// INS and Baro declaration
-AP_InertialSensor ins;
 
-Compass compass;
+static AP_BoardConfig board_config;
+static AP_InertialSensor ins;
 
-AP_GPS gps;
-AP_Baro baro;
-AP_SerialManager serial_manager;
+static Compass compass;
+
+static AP_GPS gps;
+static AP_Baro barometer;
+static AP_SerialManager serial_manager;
+AP_Int32 logger_bitmask;
+static AP_Logger logger{logger_bitmask};
+
+class DummyVehicle {
+public:
+    AP_AHRS_NavEKF ahrs{AP_AHRS_NavEKF::FLAG_ALWAYS_USE_EKF};
+};
+
+static DummyVehicle vehicle;
 
 // choose which AHRS system to use
-AP_AHRS_DCM  ahrs(ins, baro, gps);
-
-
-
-#define HIGH 1
-#define LOW 0
+// AP_AHRS_DCM ahrs = AP_AHRS_DCM::create(barometer, gps);
+AP_AHRS_NavEKF &ahrs = vehicle.ahrs;
 
 void setup(void)
 {
-    ins.init(AP_InertialSensor::RATE_100HZ);
+    board_config.init();
+    ins.init(100);
     ahrs.init();
     serial_manager.init();
 
-    if( compass.init() ) {
+    compass.init();
+    if(compass.read()) {
         hal.console->printf("Enabling compass\n");
         ahrs.set_compass(&compass);
     } else {
         hal.console->printf("No compass detected\n");
     }
-    gps.init(NULL, serial_manager);
+    gps.init(serial_manager);
 }
 
 void loop(void)
@@ -55,14 +69,11 @@ void loop(void)
     }
     last_t = now;
 
-    if (now - last_compass > 100*1000UL &&
+    if (now - last_compass > 100 * 1000UL &&
         compass.read()) {
-        heading = compass.calculate_heading(ahrs.get_dcm_matrix());
+        heading = compass.calculate_heading(ahrs.get_rotation_body_to_ned());
         // read compass at 10Hz
         last_compass = now;
-#if WITH_GPS
-        g_gps->update();
-#endif
     }
 
     ahrs.update();
@@ -73,17 +84,22 @@ void loop(void)
         hal.console->printf(
                 "r:%4.1f  p:%4.1f y:%4.1f "
                     "drift=(%5.1f %5.1f %5.1f) hdg=%.1f rate=%.1f\n",
-                        ToDeg(ahrs.roll),
-                        ToDeg(ahrs.pitch),
-                        ToDeg(ahrs.yaw),
-                        ToDeg(drift.x),
-                        ToDeg(drift.y),
-                        ToDeg(drift.z),
-                        compass.use_for_yaw() ? ToDeg(heading) : 0.0f,
-                        (1.0e6f*counter)/(now-last_print));
+                (double)ToDeg(ahrs.roll),
+                (double)ToDeg(ahrs.pitch),
+                (double)ToDeg(ahrs.yaw),
+                (double)ToDeg(drift.x),
+                (double)ToDeg(drift.y),
+                (double)ToDeg(drift.z),
+                (double)(compass.use_for_yaw() ? ToDeg(heading) : 0.0f),
+                (double)((1.0e6f * counter) / (now-last_print)));
         last_print = now;
         counter = 0;
     }
 }
+
+const struct AP_Param::GroupInfo        GCS_MAVLINK_Parameters::var_info[] = {
+    AP_GROUPEND
+};
+GCS_Dummy _gcs;
 
 AP_HAL_MAIN();

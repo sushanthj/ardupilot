@@ -1,4 +1,3 @@
-// -*- tab-width: 4; Mode: C++; c-basic-offset: 4; indent-tabs-mode: nil -*-
 /*
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -13,9 +12,7 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-
-#ifndef __RPM_H__
-#define __RPM_H__
+#pragma once
 
 #include <AP_Common/AP_Common.h>
 #include <AP_HAL/AP_HAL.h>
@@ -25,19 +22,26 @@
 // Maximum number of RPM measurement instances available on this platform
 #define RPM_MAX_INSTANCES 2
 
-class AP_RPM_Backend; 
- 
+class AP_RPM_Backend;
+
 class AP_RPM
 {
-public:
     friend class AP_RPM_Backend;
 
-    AP_RPM(void);
+public:
+    AP_RPM();
+
+    /* Do not allow copies */
+    AP_RPM(const AP_RPM &other) = delete;
+    AP_RPM &operator=(const AP_RPM&) = delete;
 
     // RPM driver types
     enum RPM_Type {
         RPM_TYPE_NONE    = 0,
-        RPM_TYPE_PX4_PWM = 1
+        RPM_TYPE_PWM     = 1,
+        RPM_TYPE_PIN     = 2,
+        RPM_TYPE_EFI     = 3,
+        RPM_TYPE_HNTCH   = 4
     };
 
     // The RPM_State structure is filled in by the backend driver
@@ -50,13 +54,14 @@ public:
 
     // parameters for each instance
     AP_Int8  _type[RPM_MAX_INSTANCES];
+    AP_Int8  _pin[RPM_MAX_INSTANCES];
     AP_Float _scaling[RPM_MAX_INSTANCES];
     AP_Float _maximum[RPM_MAX_INSTANCES];
     AP_Float _minimum[RPM_MAX_INSTANCES];
     AP_Float _quality_min[RPM_MAX_INSTANCES];
 
     static const struct AP_Param::GroupInfo var_info[];
-    
+
     // Return the number of rpm sensor instances
     uint8_t num_sensors(void) const {
         return num_instances;
@@ -71,12 +76,7 @@ public:
     /*
       return RPM for a sensor. Return -1 if not healthy
      */
-    float get_rpm(uint8_t instance) const {
-        if (!healthy(instance)) {
-            return -1;
-        }
-        return state[instance].rate_rpm;
-    }
+    bool get_rpm(uint8_t instance, float &rpm_value) const;
 
     /*
       return signal quality for a sensor.
@@ -89,12 +89,18 @@ public:
 
     bool enabled(uint8_t instance) const;
 
+    static AP_RPM *get_singleton() { return _singleton; }
+
 private:
+    static AP_RPM *_singleton;
+
     RPM_State state[RPM_MAX_INSTANCES];
     AP_RPM_Backend *drivers[RPM_MAX_INSTANCES];
     uint8_t num_instances:2;
 
     void detect_instance(uint8_t instance);
-    void update_instance(uint8_t instance);  
 };
-#endif // __RPM_H__
+
+namespace AP {
+    AP_RPM *rpm();
+};

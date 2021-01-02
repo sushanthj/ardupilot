@@ -1,4 +1,3 @@
-// -*- tab-width: 4; Mode: C++; c-basic-offset: 4; indent-tabs-mode: nil -*-
 /*
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -25,9 +24,9 @@ extern const AP_HAL::HAL& hal;
    open the sensor in constructor
 */
 AP_RPM_SITL::AP_RPM_SITL(AP_RPM &_ap_rpm, uint8_t _instance, AP_RPM::RPM_State &_state) :
-	AP_RPM_Backend(_ap_rpm, instance, _state)
+    AP_RPM_Backend(_ap_rpm, _instance, _state),
+    sitl(AP::sitl())
 {
-    sitl = (SITL::SITL *)AP_Param::find_object("SIM_");
     instance = _instance;
 }
 
@@ -37,11 +36,14 @@ void AP_RPM_SITL::update(void)
         return;
     }
     if (instance == 0) {
-        state.rate_rpm = sitl->state.rpm1;
+        state.rate_rpm = sitl->state.rpm[0];
     } else {
-        state.rate_rpm = sitl->state.rpm2;
+        state.rate_rpm = sitl->state.rpm[1];
     }
+    state.rate_rpm *= ap_rpm._scaling[state.instance];
+    state.signal_quality = 0.5f;
     state.last_reading_ms = AP_HAL::millis();
+
 }
 
 #endif // CONFIG_HAL_BOARD

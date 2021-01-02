@@ -1,4 +1,3 @@
-// -*- tab-width: 4; Mode: C++; c-basic-offset: 4; indent-tabs-mode: nil -*-
 /*
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -13,9 +12,7 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
- 
-#ifndef AP_RPM_SITL_H
-#define AP_RPM_SITL_H
+#pragma once
 
 #if CONFIG_HAL_BOARD == HAL_BOARD_SITL
 
@@ -30,11 +27,10 @@ public:
     AP_RPM_SITL(AP_RPM &ranger, uint8_t instance, AP_RPM::RPM_State &_state);
 
     // update state
-    void update(void);
+    void update(void) override;
 private:
     SITL::SITL *sitl;    
     uint8_t instance;
 };
 
 #endif // CONFIG_HAL_BOARD
-#endif // AP_RPM_SITL_H
